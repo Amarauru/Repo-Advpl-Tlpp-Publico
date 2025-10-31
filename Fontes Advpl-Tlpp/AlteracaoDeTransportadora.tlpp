@@ -1,0 +1,168 @@
+#INCLUDE "RWMAKE.CH"
+#INCLUDE "TOPCONN.CH"
+#INCLUDE "PROTHEUS.CH"
+#INCLUDE "AP5MAIL.CH"
+#INCLUDE "INKEY.CH"
+#INCLUDE "FIVEWIN.CH"
+#INCLUDE "TBICONN.CH"
+#INCLUDE "COLORS.CH"
+#INCLUDE "FONT.CH"
+#INCLUDE 'TLPP-CORE.TH'
+
+
+/*
++----------------+-----------------------------------------------------+----------------------------------------------------------------------------
+| Analista       | Pedro Almeida 		                               | 16/04/2025
++----------------+-----------------------------------------------------+----------------------------------------------------------------------------
+| Descricao da   | Realizar alteração das transportadoras nos Pedidos
+| Rotina         |
++----------------+----------------------------------------------------------------------------------------------------------------------------------
+| Issue          |  #133
++----------------+----------------------------------------------------------------------------------------------------------------------------------
+
+ Alterações
++----------------+---------+-----------------------------------------------------------------------------------------------------------------------
+| TAG            | Mantis  | Analista e Descrição da Rotina
++----------------+---------+-----------------------------------------------------------------------------------------------------------------------
+| XXX-DD/MM/AAAA | 9999999 | Nome do Analista - Descrição da Alteração
++----------------+---------+-----------------------------------------------------------------------------------------------------------------------
+*/
+
+/* User Function exectrp()
+    MsApp():New("SIGAFAT")
+    oApp:CreateEnv()
+    PtSetTheme("OCEAN")
+    oApp:cStartProg := "U_AlteracaoDeTransportadora"
+    oApp:Activate()
+Return Nil */
+
+User Function AlteracaoDeTransportadora()
+
+	Local oBrowse
+	Local oBtn1
+	Local oBtn2
+	Local cQuery
+	Local aDados := {}
+	Local aCombo := {'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'}
+	Local aPergs := {}
+	Local cNomeMunicipio := ''
+	Static oDlg
+
+	aAdd(aPergs, {1, "Transportadora DE: ",space(TamSX3("A4_COD")[1]),PesqPict("SA4","A4_COD"),"ExistCpo('SA4')","SA4",, TamSX3("A4_COD")[1], .T.})//MV_PAR01
+	aAdd(aPergs, {1, "Transportadora PARA: ",space(TamSX3("A4_COD")[1]),PesqPict("SA4","A4_COD"),"ExistCpo('SA4')","SA4",, TamSX3("A4_COD")[1], .T.})//MV_PAR02
+	aAdd(aPergs, {2, "Estado",01,aCombo,50,".F.",.T.,,})//MV_PAR03
+	aAdd(aPergs, {1, "Municipio: ",space(TamSX3("CC2_CODMUN")[1]),PesqPict("CC2","CC2_CODMUN"),,"CC2",, TamSX3("CC2_CODMUN")[1], .F.})//MV_PAR04
+	aAdd(aPergs, {1, "Por Pedido: ",space(TamSX3("C5_NUM")[1]),PesqPict("SC5","C5_NUM"),"","",, TamSX3("C5_NUM")[1], .F.})//MV_PAR05
+	
+	If !parambox(aPergs,"Informe os parametros do de/Para")
+		Return FwAlertWarning("Parametros não informados.","Atencao")
+	EndIf
+	
+	if !Empty(MV_PAR04)
+		Dbselectarea('CC2')
+		dbSetOrder(1)
+		IF !CC2->(dbSeek(xFilial("CC2")+MV_PAR03+MV_PAR04))
+			FwAlertWarning("Municipio não encontrado com o estado selecionado, verifique novamente.","Atencao")
+			Return
+		Endif
+	Endif
+
+	cQuery :=  " SELECT C5_DT_DIG,C5_NUM PEDIDO, TRANSP_DE=SA4.A4_NOME,TRANSP_PARA=XA4.A4_NOME,NOME=A1_NOME,ESTADO = A1_EST,MUNICIPIO = A1_COD_MUN, " + chr(13)+chr(10)
+	cQuery +=  " C5_YSTATUS STATUS,C5_CLIENTE CLIENTE,C5_TPFRETE,COUNT(*) over() AS TOTALREG                                              			" + chr(13)+chr(10)
+	cQuery +=  " FROM " + RETSQLNAME("SC5") + " SC5                                                                                       			" + chr(13)+chr(10)
+	cQuery +=  " JOIN " + RETSQLNAME("SA1") + " SA1 ON (C5_FILIAL=A1_FILIAL AND C5_CLIENTE=A1_COD AND SA1.D_E_L_E_T_='')                  			" + chr(13)+chr(10)
+	cQuery +=  " LEFT JOIN " + RETSQLNAME("SA4") + " SA4 ON (SA4.A4_FILIAL=C5_FILIAL AND SA4.A4_COD=C5_TRANSP AND SA4.D_E_L_E_T_='')      			" + chr(13)+chr(10)
+	cQuery +=  " LEFT JOIN " + RETSQLNAME("SA4") + " XA4 ON (XA4.A4_FILIAL=C5_FILIAL AND XA4.A4_COD='"+Alltrim(MV_PAR02)+"' AND XA4.D_E_L_E_T_='')  " + chr(13)+chr(10)
+	cQuery +=  " WHERE C5_TRANSP= '"+Alltrim(MV_PAR01)+"'                                                                                           " + chr(13)+chr(10)
+	cQuery +=  " AND A1_EST  =  '"+Alltrim(MV_PAR03)+"'                                                                                             " + chr(13)+chr(10)
+	if !Empty(MV_PAR05)
+	cQuery +=  " AND SC5.C5_NUM  =  '"+Alltrim(MV_PAR05)+"'   																						" + chr(13)+chr(10)
+	Endif
+	if !Empty(MV_PAR04)
+	cQuery +=  " AND A1_COD_MUN  =  '"+Alltrim(MV_PAR04)+"'   																						" + chr(13)+chr(10)
+	Endif
+	cQuery +=  " AND C5_FILIAL='10'                                                                                                       			" + chr(13)+chr(10)
+	cQuery +=  " AND SC5.D_E_L_E_T_=''                                                                                                    			" + chr(13)+chr(10)
+	cQuery +=  " AND SC5.C5_TPFRETE='C'                                                                                                   			" + chr(13)+chr(10)
+	cQuery +=  " AND LEFT(C5_YSTATUS,1) IN ('0','1','2','3')                                                                              			" + chr(13)+chr(10)
+	cQuery +=  " ORDER BY C5_CLIENTE  "
+	MpSysOpenQuery(cQuery,"QRP")
+
+	if QRP->(EOF())
+		FwAlertWarning("Não houve registros encontrados, verifique os parametros novamente","ATENCAO")
+		Return
+	EndIf
+
+	DEFINE MSDIALOG oDlg TITLE "Tela DE/PARA Transporte" FROM 000, 000  TO 470, 950 COLORS 3, 12632256 PIXEL
+
+	While QRP->(!EOF())
+	
+		cNomeMunicipio := POSICIONE("CC2",1,XFILIAL("CC2")+MV_PAR03+QRP->MUNICIPIO,"CC2_MUN")
+		aAdd( aDados, { Alltrim(QRP->Pedido),Alltrim(QRP->TRANSP_DE),Alltrim(QRP->TRANSP_PARA),Alltrim(QRP->ESTADO),Alltrim(QRP->MUNICIPIO),Alltrim(cNomeMunicipio), Alltrim(QRP->STATUS),Alltrim(QRP->CLIENTE)})
+		QRP->(dbSkip())
+	End
+
+	//Setando o Browser
+	oBrowse := MsBrGetDBase():new( 0, 0, 480, 240,,,, oDlg,,,,,,,,,,,, .F., "", .T.,, .F.,,, )
+
+	//Carregando as informações
+	oBrowse:setArray( aDados )
+
+	//Colunas da tela
+	oBrowse:addColumn( TCColumn():new( "Pedido"             , { || aDados[oBrowse:nAt, 1] },,,, "LEFT",, .F., .F.,,,, .F. ) )
+	oBrowse:addColumn( TCColumn():new( "Transportadora de"  , { || aDados[oBrowse:nAt, 2] },,,, "LEFT",, .F., .F.,,,, .F. ) )
+	oBrowse:addColumn( TCColumn():new( "Transportadora Para", { || aDados[oBrowse:nAt, 3] },,,, "LEFT",, .F., .F.,,,, .F. ) )
+	oBrowse:addColumn( TCColumn():new( "Estado"				, { || aDados[oBrowse:nAt, 4] },,,, "LEFT",, .F., .F.,,,, .F. ) )
+	oBrowse:addColumn( TCColumn():new( "Municipio"			, { || aDados[oBrowse:nAt, 5] },,,, "LEFT",, .F., .F.,,,, .F. ) )
+	oBrowse:addColumn( TCColumn():new( "Nome Muni"			, { || aDados[oBrowse:nAt, 6] },,,, "LEFT",, .F., .F.,,,, .F. ) )
+	oBrowse:addColumn( TCColumn():new( "Status"	            , { || aDados[oBrowse:nAt, 7] },,,, "LEFT",, .F., .F.,,,, .F. ) )
+	oBrowse:addColumn( TCColumn():new( "Cliente"            , { || aDados[oBrowse:nAt, 8] },,,, "LEFT",, .F., .F.,,,, .F. ) )
+	oBrowse:Refresh()
+
+	oBtn1:= TButton():New( 223, 340,"Confirmar",  oDlg,{|| Processa({|| TrocaTrp(MV_PAR01,MV_PAR02)}, "Executando...") },054,012,,,,.T.,,"",,,,.F. )
+	oBtn2:= TButton():New( 223, 420,"Cancelar"	, oDlg,{|| oDlg:End()	},054,012,,,.F.,.T.,.F.,,.F.,,,.F. )
+
+	ACTIVATE MSDIALOG oDlg CENTERED
+	QRP->(dbcloseArea())
+
+Return
+
+Static Function TrocaTrp(cTranspD,cTranspP)
+	Local aArea :=  GetArea()
+
+	Local nAtual := 0
+	Local nTotal
+
+	QRP->(DbgoTop())
+	if MsgYesNo("Confirma Troca de Transportadora de "+cTranspD+" para "+cTranspP+" em "+cValToChar(QRP->TOTALREG)+" pedidos?","Atenção")
+		Dbselectarea('SC5')
+		SC5->(dbSetOrder(1))
+
+		nTotal := QRP->TOTALREG
+		ProcRegua(nTotal)
+
+		QRP->(DbgoTop())
+
+		While QRP->(!EOF())
+
+			IF SC5->(DbSeek(xFilial('SC5') + QRP->Pedido))//Se achar o pedido
+				if Alltrim(SC5->C5_TRANSP) == Alltrim(cTranspD) //Se de fato a transportadora é a mesma do pedido
+					if SC5->(Reclock( "SC5", .F. ))
+						SC5->C5_TRANSP:= cTranspP
+						U_LogPed("TrocaTrp",QRP->Pedido,cUserName,"Transportadora do pedido alterado de:  "+cValtoChar(cTranspD)+" para - "+cValtoChar(cTranspP)+" no Protheus, Filial 10 " ,date(),time(),.t.)
+						SC5->(MsUnLock())
+					Endif
+				Endif
+
+			Endif
+
+			nAtual++
+			IncProc("Alterando Registro " + cValToChar(nAtual) + " de " + cValToChar(nTotal) + "...")
+			QRP->(dbSkip())
+
+		End
+		RestArea(aArea)
+		FWAlertSuccess("Total de Pedidos Alterados: "+ cValToChar(nAtual),"Concluido")
+		oDlg:End()
+	Endif
+Return

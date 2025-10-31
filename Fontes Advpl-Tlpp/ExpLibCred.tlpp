@@ -1,0 +1,436 @@
+
+#include "rwmake.ch"
+#include "topconn.ch"
+#include "colors.ch"
+#include "font.ch"
+#include "ap5mail.ch"
+#INCLUDE "PROTHEUS.CH"
+#INCLUDE "INKEY.CH"
+#INCLUDE "FIVEWIN.CH"
+#INCLUDE "TBICONN.CH"
+#INCLUDE 'TLPP-CORE.TH'
+#Include "Totvs.ch"
+#Include "FWMVCDef.ch"
+#include "RESTFUL.ch"
+
+/***************************************************************************************************************************************************
+*+------------------------------------------------------------------------------------------------------------------------------------------------+*
+*|Funcao      | ExpLibCred  | Autor |    Pedro Almeida                                                                                            |*
+*+------------+-----------------------------------------------------------------------------------------------------------------------------------+*
+*|Data        | 31.07.2025                                                                                                                        |*
+*+------------+-----------------------------------------------------------------------------------------------------------------------------------+*
+*|Descricao   | Rotina para exportar os pedidos liberados pelo crédito para CSV.   (Função original : R_PLIBCRED)                                 |*
+*+------------+-----------------------------------------------------------------------------------------------------------------------------------+*
+
+
+/* 
+User Function TesteValid()  // Carregar direto pelo smartclient SEM menu
+	MsApp():New("SIGAFAT")
+	oApp:CreateEnv()
+	PtSetTheme("OCEAN")
+	oApp:cStartProg := "u_rValid"
+	oApp:Activate()
+Return Nil
+ */
+
+User Function ExpLibCred()
+
+	Processa( {|| u_LibCSV()}, "Selecionando registros, Aguarde..." , "" , .T. ) //PHADA-22/07/2025
+
+Return
+
+User Function LibCSV() //Função para exportar os clientes do Credito com Titulos vencidos
+	Local oExcel := FWMSEXCEL():New()
+	Local cTitle       := "Pedidos Liberado pelo Crédito"
+	Local cTitle2       := "Resumo de Liberação por Credito no Periodo"
+	Local cTitle3       := "Resumo por Aprovador"
+	Local cTitle4       := "Resumo por Operação"
+	Local cTitle5       := "Resumo por Condição de Pagamento"
+	Local cWorkSheet 	:= "Pedidos Liberado pelo Crédito"
+	Local cWorkSheet2 	:= "Resumo do Relatorio"
+	Local cWorkSheet3 	:= "Resumo por Aprovador"
+	Local cWorkSheet4 	:= "Resumo por Operação"
+	Local cWorkSheet5 	:= "Resumo por Condição de Pagamento"
+	Local cMask        := ""
+	Local nDefaultMask := 0
+	Local cDefaultDir  := ""
+	Local nOptions     := GETF_LOCALHARD+GETF_NETWORKDRIVE+GETF_RETDIRECTORY
+	Local cDir       := ""//"\system\"//GetSrvProfString("ROOTPATH","")+"\"
+	Local cFile      := "Pedidos_Liberado_pelo_Credito" + DToS(Date()) + ".xml"
+	Local cQuery
+	Local aPergs := {}
+	Local nTotal := 0
+	Local nAtual := 0
+	Local WUSUCRED := ''
+	Local nPosTes
+
+	oExcel:AddworkSheet(cWorkSheet)
+	oExcel:AddTable (cWorkSheet,cTitle)
+
+
+	cDir := cGetFile(cMask,cTitle,nDefaultMask,cDefaultDir,,nOptions)
+	//Relatório
+	oExcel:AddColumn(cWorkSheet,cTitle,"Pedido"                              ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle,"Cliente"                             ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle,"Nome"                                ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle,"Data de Saida"                       ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle,"Hora de Saida"                       ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle,"Condicao Pagamento"                  ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle,"Risco"                               ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle,"Limite Credito"                      ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle,"Vencimento do Limite"                ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle,"Valor Liberado"                      ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle,"Tipo de Liberação"                   ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle,"Aprovador do Crédito"                ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle,"Operação Venda/Transf/Remess/Retorno",1,1)
+
+	//Resumo do Relatorio
+	oExcel:AddworkSheet(cWorkSheet2)
+	oExcel:AddTable (cWorkSheet2,cTitle2)
+	oExcel:AddColumn(cWorkSheet2,cTitle2,"Quant"                                    ,1,1)
+	oExcel:AddColumn(cWorkSheet2,cTitle2,"Automaticos"                              ,1,1)
+	oExcel:AddColumn(cWorkSheet2,cTitle2,"Quant"                                    ,1,1)
+	oExcel:AddColumn(cWorkSheet2,cTitle2,"Diversos"                                 ,1,1)
+	oExcel:AddColumn(cWorkSheet2,cTitle2,"Tot Qt"                                   ,1,1)
+	oExcel:AddColumn(cWorkSheet2,cTitle2,"Total Auto/Div"                           ,1,1)
+	oExcel:AddColumn(cWorkSheet2,cTitle2,"Venda/Diversos"                           ,1,1)
+
+	//Resumo por Aprovador
+	oExcel:AddworkSheet(cWorkSheet3)
+	oExcel:AddTable (cWorkSheet3,cTitle3)
+	oExcel:AddColumn(cWorkSheet3,cTitle3,"Aprovador"                                ,1,1)
+	oExcel:AddColumn(cWorkSheet3,cTitle3,"Total Venda"                              ,1,1)
+	oExcel:AddColumn(cWorkSheet3,cTitle3,"Qtd/Venda"                                ,1,1)
+	oExcel:AddColumn(cWorkSheet3,cTitle3,"Diversos"                                 ,1,1)
+	oExcel:AddColumn(cWorkSheet3,cTitle3,"Qtd.Div"                                  ,1,1)
+	oExcel:AddColumn(cWorkSheet3,cTitle3,"Soma"                                     ,1,1)
+	oExcel:AddColumn(cWorkSheet3,cTitle3,"Venda+Diversos"                           ,1,1)
+
+	//Resumo por Operação
+	oExcel:AddworkSheet(cWorkSheet4)
+	oExcel:AddTable (cWorkSheet4,cTitle4)
+	oExcel:AddColumn(cWorkSheet4,cTitle4,"TES-Descrição"                             ,1,1)
+	oExcel:AddColumn(cWorkSheet4,cTitle4,"V a l o r"                              	 ,1,1)
+	oExcel:AddColumn(cWorkSheet4,cTitle4,"Q t d e"                                	 ,1,1)
+	oExcel:AddColumn(cWorkSheet4,cTitle4,"Fin"                                 		 ,1,1)
+
+	//Resumo por condição de pagamento
+	oExcel:AddworkSheet(cWorkSheet5)
+	oExcel:AddTable (cWorkSheet5,cTitle5)
+	oExcel:AddColumn(cWorkSheet5,cTitle5,"COD-Condica"                               ,1,1)
+	oExcel:AddColumn(cWorkSheet5,cTitle5,"V a l o r"                              	 ,1,1)
+	oExcel:AddColumn(cWorkSheet5,cTitle5,"Q t d e"                                	 ,1,1)
+
+
+	aAdd(aPergs, {1, "Liberado em "         , Date(),  "", ".T.", "", ".T.", 40,  .F.})
+	aAdd(aPergs, {1, "Liberado até "        , Date(),  "", ".T.", "", ".T.", 40,  .T.})
+	aAdd(aPergs, {2, "imprime apenas Resumo", '1'       , {"1=Não","2=Sim"},     80, ".T.", .F.})
+
+	If !parambox(aPergs,"Informe os parametros")
+		Return
+	EndIf
+
+	cQuery := " SELECT C5_NUM,A1_COD,A1_NOME,C5_DTS_CRE,C5_HRS_CRE,C5_CONDPAG,A1_RISCO,A1_LC,A1_VENCLC,C5_ESPECI2,C5_USUCRED,                                       "+CHR(13)+CHR(10)
+	cQuery += " (SELECT TOP 1 C6_TES FROM "+RETSQLNAME("SC6")+" C6TES WHERE C6TES.C6_NUM = SC5.C5_NUM AND C6TES.D_E_L_E_T_<>'*') AS C5_TES,                         "+CHR(13)+CHR(10)
+	cQuery += " SUM(((SC6.C6_QTDEMP+SC6.C6_QTDENT)*SC6.C6_PRCVEN)+ROUND((SC6.C6_DESCIPI/SC6.C6_QTDVEN)*(SC6.C6_QTDEMP+SC6.C6_QTDENT),4)) AS VLR_PED                 "+CHR(13)+CHR(10)
+	cQuery += " FROM "+RETSQLNAME("SC5")+" SC5 (NOLOCK),"+RETSQLNAME("SA1")+" SA1 (NOLOCK), "+RETSQLNAME("SC6")+" SC6 (NOLOCK), " +RETSQLNAME("SF4")+" SF4 (NOLOCK) "+CHR(13)+CHR(10)
+	cQuery += " WHERE C5_DTS_CRE BETWEEN '"+DTOS(MV_PAR01)+"' AND '"+DTOS(MV_PAR02)+"'                                                                              "+CHR(13)+CHR(10)
+	cQuery += " AND C5_CLIENTE = A1_COD                                                                                                                             "+CHR(13)+CHR(10)
+	cQuery += " AND C5_LOJACLI = A1_LOJA                                                                                                                            "+CHR(13)+CHR(10)
+	cQuery += " AND C5_NUM = C6_NUM                                                                                                                                 "+CHR(13)+CHR(10)
+	cQuery += " AND SC5.D_E_L_E_T_ = ''                                                                                                                             "+CHR(13)+CHR(10)
+	cQuery += " AND SA1.D_E_L_E_T_ = ''                                                                                                                             "+CHR(13)+CHR(10)
+	cQuery += " AND SC6.D_E_L_E_T_ = ''                                                                                                                             "+CHR(13)+CHR(10)
+	cQuery += " AND SF4.D_E_L_E_T_ = ''                                                                                                                             "+CHR(13)+CHR(10)
+	cQuery += " AND C6_FILIAL = C5_FILIAL                                                                                                                           "+CHR(13)+CHR(10)
+	cQuery += " AND SC6.C6_TES = SF4.F4_CODIGO                                                                                                                      "+CHR(13)+CHR(10)
+	cQuery += " AND SF4.F4_DUPLIC = 'S'                                                                                                                             "+CHR(13)+CHR(10)
+	cQuery += " AND SC6.C6_QTDVEN > 0                                                                                                                               "+CHR(13)+CHR(10)
+	cQuery += " AND SC6.C6_FILIAL = '"+xFilial("SC6")+"'                                                                                                            "+CHR(13)+CHR(10)
+	cQuery += " AND SF4.F4_FILIAL = '"+xFilial("SF4")+"'                                                                                                            "+CHR(13)+CHR(10)
+	cQuery += " AND SA1.A1_FILIAL = '"+xFilial("SA1")+"'                                                                                                            "+CHR(13)+CHR(10)
+	cQuery += " GROUP BY C5_NUM,A1_COD,A1_NOME,C5_DTS_CRE,C5_HRS_CRE,C5_CONDPAG,A1_RISCO,A1_LC,A1_VENCLC,C5_ESPECI2,C5_USUCRED                                      "+CHR(13)+CHR(10)
+	cQuery += " ORDER BY C5_DTS_CRE, C5_NUM                                                                                                                         "+CHR(13)+CHR(10)
+	MpSysOpenQuery(cQuery,"SC5N")
+
+	dbSelectArea('SC5N')
+	Dbgotop()
+
+	Count To nTotal
+	ProcRegua(nTotal)
+
+	Dbgotop()
+	if SC5N->(EOF())
+		SC5N->(DbCloseArea())
+		MsgAlert("Não existem registros selecionados, verifique as datas informadas!!!","Atenção")
+		Return
+	Endif
+
+	nAtual := 0
+
+	NPED    :=0
+	NVLR    :=0
+	NPEDAUT :=0
+	NVLRAUT :=0
+	NVLNFAT :=0
+	NQTNFAT :=0
+	NVLNAUT :=0
+	NQTNAUT :=0
+	aTotTes :={}
+	aTotCond:={}
+	nPosTes :=0
+
+	While !SC5N->(Eof())
+		nAtual++
+
+		If SC5N->VLR_PED == 0
+			SC5N->(DbSkip())
+			Loop
+		EndIf
+
+		SF4->(DbSeek(xFilial("SF4")+SC5N->C5_TES))
+
+		If MV_PAR03 == '1'
+
+			SE4->( DBSETORDER(1) )
+			SE4->( DBSEEK(xFILIAL("SE4")+SC5N->C5_CONDPAG) )
+
+			IncProc('Buscando Registros....' + cValToChar(nAtual) + ' de ' + cValToChar(nTotal) + '...')
+
+			oExcel:AddRow(cWorkSheet,cTitle,{SC5N->C5_NUM   ,;
+				SC5N->A1_COD                                    ,;
+				SUBSTR(SC5N->A1_NOME,1,34)                      ,;
+				SC5N->C5_DTS_CRE                                ,;
+				SC5N->C5_HRS_CRE                                ,;
+				SE4->E4_DESCRI                                  ,;
+				SC5N->A1_RISCO                                  ,;
+				TRANSFORM(SC5N->A1_LC,"@E 9,999,999.99")        ,;
+				SC5N->A1_VENCLC                                 ,;
+				TRANSFORM(SC5N->VLR_PED,"@E 9,999,999.99")      ,;
+				SC5N->C5_ESPECI2                                ,;
+				SC5N->C5_USUCRED                                ,;
+				SC5N->C5_TES+"-"+SF4->F4_TEXTO+" ("+SF4->F4_DUPLIC+")"})
+		Endif
+
+
+		nPosTes:=aScan(aTotTes,{|X| X[1]==SC5N->C5_TES}) // Subtotalização por TES
+
+		If nPosTes == 0
+			AADD(aTotTes,{SC5N->C5_TES,SC5N->VLR_PED,1})
+		Else
+			aTotTes[nPosTes][2]+=SC5N->VLR_PED
+			aTotTes[nPosTes][3]+=1
+		EndIf
+
+
+		nPosTes:=aScan(aTotCond,{|X| X[1]==SC5N->C5_CONDPAG}) // Subtotalização por Condição de Pagamento
+		If nPosTes == 0
+			AADD(aTotCond,{SC5N->C5_CONDPAG,SC5N->VLR_PED,1})
+		Else
+			aTotCond[nPosTes][2]+=SC5N->VLR_PED
+			aTotCond[nPosTes][3]+=1
+		EndIf
+
+		If SF4->F4_DUPLIC <> 'S' // Pedidos que não geram financeiro
+			If SC5N->C5_USUCRED == "AUTOMATICO"
+				NVLNAUT += SC5N->VLR_PED
+				NQTNAUT += 1
+			Else
+				NVLNFAT += SC5N->VLR_PED
+				NQTNFAT += 1
+			EndIf
+		ElseIf SC5N->C5_USUCRED == "AUTOMATICO"
+			NPEDAUT +=1
+			NVLRAUT += SC5N->VLR_PED
+		Else
+			NPED +=1
+			NVLR += SC5N->VLR_PED
+		EndIf
+
+
+		SC5N->(DbSkip())
+
+	EndDo
+
+
+	oExcel:AddRow(cWorkSheet2,cTitle2,{TRANSFORM((nPEDAUT),"@E 999999") ,;
+		TRANSFORM((nVLRAUT),"@E 99,999,999.99")                             ,;
+		TRANSFORM((nPED),"@E 999999")                                       ,;
+		TRANSFORM((nVLR),"@E 99,999,999.99")                                ,;
+		TRANSFORM(nPEDAUT+nPED,"@E 999999")                                 ,;
+		TRANSFORM(nVLRAUT+nVLR,"@E 99,999,999.99")                          ,;
+		"(A) => VENDAS"})
+
+	oExcel:AddRow(cWorkSheet2,cTitle2,{TRANSFORM((NQTNFAT),"@E 999999") ,;
+		TRANSFORM((NVLNFAT),"@E 99,999,999.99")                             ,;
+		TRANSFORM((NQTNAUT),"@E 999999")                                    ,;
+		TRANSFORM((NVLNAUT),"@E 99,999,999.99")                             ,;
+		TRANSFORM(nQTNFAT+nQTNAUT,"@E 999999")                              ,;
+		TRANSFORM(nVLNFAT+nVLNAUT,"@E 99,999,999.99")                       ,;
+		"(B) => DIVERSOS"})
+
+	oExcel:AddRow(cWorkSheet2,cTitle2,{TRANSFORM((NQTNFAT+nPEDAUT),"@E 999999") ,;
+		TRANSFORM((NVLNFAT+nVLRAUT),"@E 99,999,999.99")                             ,;
+		TRANSFORM((NQTNAUT+nPED),"@E 999999")                                       ,;
+		TRANSFORM((NVLNAUT+nVLR),"@E 99,999,999.99")                                ,;
+		TRANSFORM(nQTNFAT+nPEDAUT+nQTNAUT+nPED,"@E 999999")                         ,;
+		TRANSFORM(nVLNFAT+nVLRAUT+nVLNAUT+nVLR,"@E 99,999,999.99")                  ,;
+		"(C) => T O T A L ( A + B )"})
+
+	SC5N->(DbCloseArea()) //Finalizando a primeira consulta
+
+	cQuery := " SELECT C5_NUM,A1_COD,A1_NOME,C5_DTS_CRE,C5_HRS_CRE,C5_CONDPAG,A1_RISCO,A1_LC,A1_VENCLC,C5_ESPECI2,C5_USUCRED,                                       "+CHR(13)+CHR(10)
+	cQuery += " (SELECT TOP 1 C6_TES FROM "+RETSQLNAME("SC6")+" C6TES WHERE C6TES.C6_NUM = SC5.C5_NUM AND C6TES.D_E_L_E_T_<>'*') AS C5_TES,                         "+CHR(13)+CHR(10)
+	cQuery += " SUM(((SC6.C6_QTDEMP+SC6.C6_QTDENT)*SC6.C6_PRCVEN)+ROUND((SC6.C6_DESCIPI/SC6.C6_QTDVEN)*(SC6.C6_QTDEMP+SC6.C6_QTDENT),4)) AS VLR_PED                 "+CHR(13)+CHR(10)
+	cQuery += " FROM "+RETSQLNAME("SC5")+" SC5 (NOLOCK),"+RETSQLNAME("SA1")+" SA1 (NOLOCK), "+RETSQLNAME("SC6")+" SC6 (NOLOCK), " +RETSQLNAME("SF4")+" SF4 (NOLOCK) "+CHR(13)+CHR(10)
+	cQuery += " WHERE C5_DTS_CRE BETWEEN '"+DTOS(MV_PAR01)+"' AND '"+DTOS(MV_PAR02)+"'                                                                              "+CHR(13)+CHR(10)
+	cQuery += " AND C5_CLIENTE = A1_COD                                                                                                                             "+CHR(13)+CHR(10)
+	cQuery += " AND C5_LOJACLI = A1_LOJA                                                                                                                            "+CHR(13)+CHR(10)
+	cQuery += " AND C5_NUM = C6_NUM                                                                                                                                 "+CHR(13)+CHR(10)
+	cQuery += " AND SC5.D_E_L_E_T_ = ''                                                                                                                             "+CHR(13)+CHR(10)
+	cQuery += " AND SA1.D_E_L_E_T_ = ''                                                                                                                             "+CHR(13)+CHR(10)
+	cQuery += " AND SC6.D_E_L_E_T_ = ''                                                                                                                             "+CHR(13)+CHR(10)
+	cQuery += " AND SF4.D_E_L_E_T_ = ''                                                                                                                             "+CHR(13)+CHR(10)
+	cQuery += " AND C6_FILIAL = C5_FILIAL                                                                                                                           "+CHR(13)+CHR(10)
+	cQuery += " AND SC6.C6_TES = SF4.F4_CODIGO                                                                                                                      "+CHR(13)+CHR(10)
+	cQuery += " AND SF4.F4_DUPLIC = 'S'                                                                                                                             "+CHR(13)+CHR(10)
+	cQuery += " AND SC6.C6_QTDVEN > 0                                                                                                                               "+CHR(13)+CHR(10)
+	cQuery += " GROUP BY C5_NUM,A1_COD,A1_NOME,C5_DTS_CRE,C5_HRS_CRE,C5_CONDPAG,A1_RISCO,A1_LC,A1_VENCLC,C5_ESPECI2,C5_USUCRED                                      "+CHR(13)+CHR(10)
+	cQuery += " ORDER BY C5_USUCRED, C5_TES                                                                                                                         "+CHR(13)+CHR(10)
+	MpSysOpenQuery(cQuery,"SC5N")
+
+	dbSelectArea('SC5N')
+	Dbgotop()
+
+	NPED := 0
+	NVLR := 0
+	NPEDTOT := 0
+	NVLRTOT := 0
+	NQTNFAT := 0
+	NVLNFAT := 0
+	nQTNTOT := 0
+	NVLNTOT := 0
+
+
+
+	While !SC5N->( EOF() )
+
+		If SC5N->VLR_PED == 0
+			DbSkip()
+			Loop
+		EndIf
+
+		NPED    := 0
+		NVLR    := 0
+		nQTNFAT := 0
+		nVLNFAT := 0
+
+		WUSUCRED:=SC5N->C5_USUCRED
+		While !SC5N->( EOF() ) .AND. WUSUCRED = SC5N->C5_USUCRED
+
+			If SF4->(DbSeek(xFilial("SF4")+SC5N->C5_TES))
+
+				If SF4->F4_DUPLIC == "S"
+					NPED++
+					NVLR := NVLR + SC5N->VLR_PED
+				Else
+					nQTNFAT+=1
+					nVLNFAT+= SC5N->VLR_PED
+				EndIf
+
+			EndIf
+
+			SC5N->( dbSkip() )
+
+		ENDDO
+
+		oExcel:AddRow(cWorkSheet3,cTitle3,{IF(Empty(WUSUCRED),"DIVERSOS",WUSUCRED) ,;
+		TRANSFORM((NVLR),"@E 99,999,999.99")                                                       ,;
+		TRANSFORM(NPED,"@E 999,999")                                                               ,;
+		TRANSFORM(nVLNFAT,"@E 99,999,999.99")                                                      ,;
+		TRANSFORM(NQTNFAT,"@E 999,999")                                                            ,;
+		TRANSFORM(nVLNFAT+NVLR,"@E 99,999,999.99")                                                 ,;
+		TRANSFORM(NQTNFAT+NPED,"@E 999,999")})
+
+		NPEDTOT := NPEDTOT + NPED
+		NVLRTOT := NVLRTOT + NVLR
+
+		NQTNTOT += NQTNFAT
+		NVLNTOT += NVLNFAT
+
+	EndDo
+
+	SC5N->( DBCLOSEAREA() )
+
+	oExcel:AddRow(cWorkSheet3,cTitle3,{"T o t a l"      ,;
+	TRANSFORM((NVLRTOT),"@E 99,999,999.99")             ,;
+	TRANSFORM((NPEDTOT),"@E 999,999")                   ,;
+	TRANSFORM(NVLNTOT,"@E 99,999,999.99")               ,;
+	TRANSFORM(NQTNTOT,"@E 999,999")                     ,;
+	TRANSFORM(NVLNTOT+NVLRTOT,"@E 99,999,999.99")       ,;
+	TRANSFORM(NQTNTOT+NPEDTOT,"@E 999,999")})
+
+
+	//Parte de Resumo por Operação
+	nQtNFat:=nVlNFat:=nPedTot:=nVlrTot:=0
+
+	For nPosTes := 1 to Len(aTotTes)
+
+		SF4->(DbSeek(xFilial("SF4")+aTotTes[nPosTes][1]))
+		oExcel:AddRow(cWorkSheet4,cTitle4,{aTotTes[nPosTes][1]+"-"+SF4->F4_TEXTO      ,;
+		Transform(aTotTes[nPosTes][2],"@E 99,999,999.99")             ,;
+		Transform(aTotTes[nPosTes][3],"@E 999,999")                   ,;
+		IIf(SF4->F4_DUPLIC=="S","Sim","Nao")})
+
+		If SF4->F4_DUPLIC <> "S"
+			nVlNFat+=aTotTes[nPosTes][2]
+			nQtNFat+=aTotTes[nPosTes][3]
+		Else
+			nVlrTot+=aTotTes[nPosTes][2]
+			nPedTot+=aTotTes[nPosTes][3]
+		EndIf
+
+
+	Next nPosTes
+
+	oExcel:AddRow(cWorkSheet4,cTitle4,{"Pedidos de Vendas"+"(A)",;
+	Transform(nVlrTot,"@E 99,999,999.99")             			,;
+	Transform(nPedTot,"@E 999,999")                   			,;
+	""})
+
+	oExcel:AddRow(cWorkSheet4,cTitle4,{"Pedidos de Vendas"+"(B)",;
+	Transform(nVlNFat,"@E 99,999,999.99")            			,;
+	Transform(nQtNFat,"@E 999,999")                  			,;
+	""})
+
+	oExcel:AddRow(cWorkSheet4,cTitle4,{"S o m a Ped. (A)+"+"(B)" ,;
+	Transform(nVlrTot+nVlNFat,"@E 99,999,999.99")            ,;
+	Transform(nPedTot+nQtNFat,"@E 999,999")                  ,;
+	""})
+
+	//Parte de Resumo por Condição de Pagamento
+	nPedTot:=nVlrTot:=0
+
+	For nPosTes := 1 to Len(aTotCond)
+
+		SE4->(DbSeek(xFilial("SE4")+aTotCond[nPosTes][1]))
+		oExcel:AddRow(cWorkSheet5,cTitle5,{aTotCond[nPosTes][1]+"-"+SE4->E4_DESCRI ,;
+		Transform(aTotCond[nPosTes][2],"@E 99,999,999.99")           ,;
+		Transform(aTotCond[nPosTes][3],"@E 999,999")})
+
+		nVlrTot+=aTotCond[nPosTes][2]
+
+		nPedTot+=aTotCond[nPosTes][3]
+
+	Next nPosTes
+
+	oExcel:AddRow(cWorkSheet5,cTitle5,{"Total Condições Pagtos" ,;
+	Transform(nVlrTot,"@E 99,999,999.99")           	,;
+	Transform(nPedTot,"@E 999,999")})
+
+
+	oExcel:Activate()
+	oExcel:GetXMLFile(cDir+cFile)
+	MsgInfo("Arquivo gerado em "+cDir+cFile)
+Return
+

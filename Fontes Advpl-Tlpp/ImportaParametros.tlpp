@@ -1,0 +1,179 @@
+#INCLUDE "TOTVS.CH"
+
+
+User Function ImportaParametros()
+	Local cCaminho := ""
+	Local cDirIni  := "C:/"
+	Local aRes     := {}
+	DEFINE MSDIALOG oDlg TITLE "Importação CSV " From 0,0 To 15,50
+	oSayArq := tSay():New(15,07,{|| "Este programa tem como objetivo importar as informações de uma planilha"+;
+		"de um arquivo no formato CSV"+;
+		"(Valores Separados por 'Ponto e virgula')."},oDlg,,,,,,.T.,,,200,80)
+	oSayArq := tSay():New(45,07,{|| "Informe o local onde se encontra o arquivo para importação:"},oDlg,,,,,,.T.,,,200,80)
+	oGetArq := TGet():New(55,05,{|u| If(PCount()>0,cCaminho:=u,cCaminho)},oDlg,150,10,'@!',,,,,,,.T.,,,,,,,,,,'cCaminho')
+	oBtnArq := tButton():New(55,160,"Abrir...",oDlg,{|| cCaminho := cGetFile( "Arquivos CSV|*.csv|Arquivos CSV|*.csv", "Selecione o arquivo:",  1, cDirIni, .F., GETF_LOCALHARD, .F., .T. )},30,12,,,,.T.)
+	oBtnImp := tButton():New(80,050,"Importar",oDlg,{|| Processa( {|| ProcessaCarga(cCaminho),oDlg:End() } )  },40,12,,,,.T.)
+	oBtnCan := tButton():New(80,110,"Cancelar",oDlg,{|| oDlg:End()},40,12,,,,.T.)
+	
+	ACTIVATE MSDIALOG oDlg CENTERED
+
+Return aRes
+
+
+Static Function ProcessaCarga(cCaminho)
+
+	Local i
+	Local aLines    := {}
+	Local cMsgHead  := "ProcessaCarga()"
+	Local oFile     := NIL
+	Local aLinha    := {}
+	Local lManterVazio := .T.
+	Local lEnd         := .F.
+	Local nPos := 0
+	Local nPosTipo			:= 0
+	Local nPosDepartamento		:= 0
+	Local nPosMargemLiquida	:= 0
+	Local nPosDescontoMedio	:= 0
+	Local nPosReducaoHistorica	:= 0
+	Private cMsg:= ""
+	Private cErro := ""
+
+	oFile := FWFileReader():New(cCaminho)
+	If !oFile:Open()
+		ApMsgStop("não foi possivel efetuar a leitura do arquivo." + cArq, cMsgHead)
+		Return
+	EndIf
+	aLines := oFile:GetAllLines()
+	If lEnd
+		ApMsgStop("Processo cancelado pelo usuario." + cArq, cMsgHead)
+		Return
+	EndIf
+	ProcRegua(Len(aLines)- 1)
+
+	For i:=2 to len(aLines)
+		If lEnd  
+			ApMsgStop("Processo cancelado pelo usuario." + cArq, cMsgHead)
+			Return {}
+		EndIf
+		IncProc("Atualizando registro " + CvalToChar(i) + " de " + cValToCHar(Len(aLines)) )
+		cLinha  := aLines[i]
+		If !Empty(cLinha)
+			cLinha := StrTran(StrTran(cLinha, '"', ''), ",", ".")
+			aLinha := Separa(cLinha, ';', lManterVazio)
+			If Len(aLinha) > 0
+				aCabec := StrTokArr(aLines[1],";")
+
+				For nPos :=1 to Len(aCabec)
+					Do CASE
+					Case aCabec[nPos] = "TIPO"
+						nPosTipo 		  	 := nPos
+					Case aCabec[nPos] = "DEPARTAMENTO"
+						nPosDepartamento  	 := nPos
+
+					Case aCabec[nPos] = "MARGEM_LIQUIDA"
+						nPosMargemLiquida 	 := nPos
+
+					Case aCabec[nPos] = "DESCONTO_MEDIO"
+						nPosDescontoMedio 	 := nPos
+
+					Case aCabec[nPos] = "REDUCAO_HISTORICA"
+						nPosReducaoHistorica := nPos
+					EndCase
+				Next
+
+				If nPosTipo = 0
+					ShowHelpDlg("Importação de Parametros de Margem",{"Arquivo sem o campo TIPO"},1,{"O arquivo deve conter o campo TIPO indicando o tipo do Produto no cabeçalho"},5)
+				ElseIf nPosDepartamento = 0
+					ShowHelpDlg("Importação de Parametros de Margem",{"Arquivo sem o campo DEPARTAMENTO"},1,{"O arquivo deve conter o campo DEPARTAMENTO indicando qual DEPARTAMENTO do COMEX no cabeçalho"},5)
+				ElseIf nPosMargemLiquida = 0
+					ShowHelpDlg("Importação de Parametros de Margem",{"Arquivo sem o campo MARGEM_LIQUIDA"},1,{"O arquivo deve conter o campo MARGEM_LIQUIDA no cabeçalho"},5)
+				ElseIf nPosDescontoMedio = 0
+					ShowHelpDlg("Importação de Parametros de Margem",{"Arquivo sem o campo DESCONTO_MEDIO"},1,{"O arquivo deve conter o campo DESCONTO_MEDIO no cabeçalho"},5)
+				ElseIf nPosReducaoHistorica = 0
+					ShowHelpDlg("Importação de Parametros de Margem",{"Arquivo sem o campo REDUCAO_HISTORICA"},1,{"O arquivo deve conter o campo REDUCAO_HISTORICA no cabeçalho"},5)
+				Else
+					cTipo 	   := aLinha[nPosTipo]
+					cDpt 	   := aLinha[nPosDepartamento]
+					nMgliq 	   := Val(aLinha[nPosMargemLiquida])
+					nDescontoM := Val(aLinha[nPosDescontoMedio])
+					nRedHist   := Val(aLinha[nPosReducaoHistorica])
+					u_AtualizaZMG(cTipo,cDpt,nMgliq,nDescontoM,nRedHist)
+
+				Endif
+			EndIf
+		EndIf
+	Next 
+	oFile:Close()
+	If !Empty(cErro)
+		u_LogDeCarga(cErro)
+	Else
+		FWAlertSuccess("Operação concluida com sucesso!","Sucesso")
+	EndIf
+	
+Return
+
+
+User Function AtualizaZMG(cTipo,cDpt,nMgliq,nDescontoM,nRedHist)
+	Local cQuery := ''
+	Local cRetTipo := ''
+
+	cQuery := "SELECT X5_CHAVE AS TIPO FROM "+RetSqlName("SX5")+" WHERE X5_FILIAL = '10' AND X5_TABELA = '02' AND X5_CHAVE = '"+Alltrim(cTipo)+"' AND D_E_L_E_T_ = '' ""
+	MpSysOpenQuery(cQuery,"TMP")
+
+	cRetTipo := TMP->TIPO
+	TMP->(DbCloseArea())
+
+	if Empty(cRetTipo)
+		cErro += "Tipo "+cTipo+" não encontrado na SX5 - 02, logo não foi alterado, revise a carga"  +CHR(13)+CHR(10)
+		Return
+	Endif
+
+	if !cDpt $("1/2/3/4/5/6/7/8")
+		cErro += "Departamento "+cDpt+" não encontrado, logo não foi alterado, revise a carga"  +CHR(13)+CHR(10)
+		Return
+	Endif
+
+	DBSelectArea('ZMG')
+	DbSetOrder(1)
+	if ZMG->(DBSEEK(XFILIAL("ZMG")+cTipo+cDpt))
+		if RECLOCK('ZMG',.F.)	    
+			ZMG->ZMG_MRGLIQ	:= nMgliq 	  
+			ZMG->ZMG_DESCMD	:= nDescontoM
+			ZMG->ZMG_RDHIST	:= nRedHist  
+			ZMG->(MsUnlock())
+		Endif
+	Else
+		RECLOCK('ZMG',.T.)
+		ZMG->ZMG_FILIAL	:= xFilial('ZMG')
+		ZMG->ZMG_TIPO	:= cTipo 	   
+		ZMG->ZMG_DPT	:= Val(cDpt) 	    
+		ZMG->ZMG_MRGLIQ	:= nMgliq 	  
+		ZMG->ZMG_DESCMD	:= nDescontoM
+		ZMG->ZMG_RDHIST	:= nRedHist  
+		ZMG->(MsUnlock())
+	Endif
+Return
+
+
+User Function LogDeCarga(cMsg, cTitulo, nTipo, lEdit)
+	Local lRetMens := .F.
+	Local oDlgMens
+	Local oBtnOk, cTxtConf := ""
+	Local oFntTxt := TFont():New("Lucida Console",,-015,,.F.,,,,,.F.,.F.)
+	Default cMsg    := "..."
+	Default cTitulo := "Log dos parametros de margem"
+	Default nTipo   := 1 // 1=Ok; 2= Confirmar e Cancelar
+	Default lEdit   := .F.
+
+	cTxtConf:='&Ok'
+	//Criando a janela centralizada com os botões
+	DEFINE MSDIALOG oDlgMens TITLE cTitulo FROM 000, 000  TO 300, 400 COLORS 0, 16777215 PIXEL
+	//Get com o Log
+	@ 002, 004 GET oMsg VAR cMsg OF oDlgMens MULTILINE SIZE 191, 121 FONT oFntTxt COLORS 0, 16777215 HSCROLL PIXEL
+	If !lEdit
+		oMsg:lReadOnly := .T.
+	EndIf
+	@ 127, 144 BUTTON oBtnOk  PROMPT cTxtConf   SIZE 051, 019 ACTION (lRetMens:=.T., oDlgMens:End()) OF oDlgMens PIXEL
+	ACTIVATE MSDIALOG oDlgMens CENTERED
+
+Return lRetMens
