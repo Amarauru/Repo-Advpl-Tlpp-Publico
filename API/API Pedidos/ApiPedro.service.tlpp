@@ -1,0 +1,108 @@
+#include "tlpp-core.th"
+#include 'tlpp-rest.th'
+#include 'protheus.ch'
+#include 'parmtype.ch'
+#INCLUDE "TBICONN.CH"
+namespace painel
+
+Class RqService
+	Public Data jResponse as Json
+	Public Data lErro     as Logical
+
+	Public method new()               as Object
+	Public method execute()           as json
+	Public method consultaped()       as json
+EndClass
+
+Method execute() as Json Class RqService
+Return ::jResponse
+
+
+Method new() as Object Class RqService
+	::jResponse := JsonObject():New()
+Return Self
+
+Method consultaped(cPedido) as json class RqService
+	Local cQuery    as Character
+	Local oDados	as Object
+	Local oItens	as Object
+	Local oPedido	as Object
+
+	::lErro := .F.
+	u_zConout("4")
+	If !Empty(cPedido)
+		cQuery := " SELECT TOP 100 C5_FILIAL,C5_NUM,C5_CLIENTE,C5_TRANSP,C5_VEND1,C5_TIPOCLI,C5_DT_DIG,C6_ITEM,C6_PRODUTO,C6_QTDVEN,C6_PRCVEN	"
+		cQuery += " FROM "+RetSqlName('SC5')+" SC5	"
+		cQuery += " JOIN "+RetSqlName('SC6')+" SC6 ON C5_FILIAL = C6_FILIAL AND C5_NUM = C6_NUM AND SC6.D_E_L_E_T_ = ''	"
+		cQuery += " WHERE SC5.D_E_L_E_T_ = '' 	"
+		cQuery += " AND C5_FILIAL = '10'	"
+		cQuery += " AND C5_NUM = '"+cPedido+"' "
+		cQuery += " AND C5_DT_DIG >= '20250101' AND C5_TRANSP <> '' 	"
+		cQuery += " AND C5_DTCANC <> '' 	"
+		cQuery += " ORDER BY C6_ITEM "
+	else
+		cQuery := " SELECT TOP 100 C5_FILIAL,C5_NUM,C5_CLIENTE,C5_TRANSP,C5_VEND1,C5_TIPOCLI,C5_DT_DIG	"
+		cQuery += " FROM "+RetSqlName('SC5')+" SC5	"
+		cQuery += " WHERE SC5.D_E_L_E_T_ = '' 	"
+		cQuery += " AND C5_FILIAL = '10'	"
+		cQuery += " AND C5_DT_DIG >= '20250101' AND C5_TRANSP <> '' 	"
+		cQuery += " AND C5_DTCANC <> '' 	"
+		cQuery += " ORDER BY C5_DT_DIG DESC	"
+	Endif
+
+	MpSysOpenQuery(cQuery, "TMP")
+
+	If TMP->(EOF())
+		::lErro := .T.
+		::jResponse["code"] := 404
+		::jResponse["erro"] := EncodeUtf8("Pedido "+Alltrim(cPedido)+" não encontrado")
+		Return ::jResponse
+	EndIf
+	u_zConout("5")
+
+	If !Empty(cPedido)
+		::jResponse["pedidos"] := {}
+		oPedido := JsonObject():New()	
+		oPedido['filial']        := TMP->C5_FILIAL
+		oPedido['numero']        := TMP->C5_NUM
+		oPedido['cliente']       := TMP->C5_CLIENTE
+		oPedido['nome_cliente']  := EncodeUtf8(Alltrim(POSICIONE('SA1', 1 , xFilial('SA1') + PADR(TMP->C5_CLIENTE,TamSx3("C5_CLIENTE")[1]),"A1_NOME")))
+		oPedido['transportadora']:= EncodeUtf8(Alltrim(POSICIONE('SA4', 1 , xFilial('SA4') + PADR(TMP->C5_TRANSP,TamSx3("C5_TRANSP")[1]),"A4_NREDUZ")))
+		oPedido['data']          := dTOc(StoD(TMP->C5_DT_DIG))
+		oPedido['representante'] := EncodeUtf8(Alltrim(POSICIONE('SA3', 1 , xFilial('SA3') + PADR(TMP->C5_VEND1,TamSx3("C5_VEND1")[1]),"A3_NOME")))
+		oPedido['tipo_cliente']  := TMP->C5_TIPOCLI
+
+		oPedido["itens"] := {}	
+
+		While TMP->(!EOF())	
+			oItens := JsonObject():New()
+			oItens["item"]       := TMP->C6_ITEM
+			oItens["produto"]    := TMP->C6_PRODUTO
+			oItens["quantidade"] := TMP->C6_QTDVEN
+			oItens["preco"]      := TMP->C6_PRCVEN
+			oItens["total"]      := TMP->C6_QTDVEN * TMP->C6_PRCVEN
+			aAdd(oPedido["itens"], oItens)	
+			TMP->(DbSkip())
+		End
+
+		aAdd(::jResponse["pedidos"], oPedido)
+		TMP->(DbCloseArea())
+		Return ::jResponse
+	Endif
+
+	::jResponse['pedidos']    := {}
+	While TMP->(!EOF())
+		oDados := JsonObject():new()
+		oDados['filial'] 	  	  := TMP->C5_FILIAL
+		oDados['numero'] 	  	  := TMP->C5_NUM
+		oDados['cliente'] 	  	  := TMP->C5_CLIENTE
+		oDados['nome_cliente'] 	  := EncodeUtf8(Alltrim(POSICIONE('SA1', 1 , xFilial('SA1') + PADR(TMP->C5_CLIENTE,TamSx3("C5_CLIENTE")[1]),"A1_NOME")))
+		oDados['transportadora']  := EncodeUtf8(Alltrim(POSICIONE('SA4', 1 , xFilial('SA4') + PADR(TMP->C5_TRANSP,TamSx3("C5_TRANSP")[1]),"A4_NREDUZ")))
+		oDados['data'] 	 		  := dTOc(StoD(TMP->C5_DT_DIG))
+		oDados['representante']   := EncodeUtf8(Alltrim(POSICIONE('SA3', 1 , xFilial('SA3') + PADR(TMP->C5_VEND1,TamSx3("C5_VEND1")[1]),"A3_NOME")))
+		oDados['tipo_cliente'] 	  := TMP->C5_TIPOCLI
+		aAdd(::jResponse["pedidos"], oDados)
+		TMP->(DbSkip())
+	End
+	TMP->(DbCloseArea())
+Return ::jResponse

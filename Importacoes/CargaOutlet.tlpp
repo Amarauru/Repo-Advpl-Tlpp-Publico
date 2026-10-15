@@ -1,0 +1,269 @@
+#INCLUDE 'TLPP-CORE.TH'
+#INCLUDE 'TLPP-REST.TH'
+#INCLUDE "TOPCONN.CH"
+#INCLUDE "TOTVS.CH"
+#INCLUDE "PROTHEUS.CH"
+#INCLUDE "FONT.CH"
+
+NAMESPACE pha.cargaOT
+User Function CargaOutlet() //pha.cargaOT.CargaOutlet
+	Local cCaminho := ""
+	Local cDirIni  := "C:/"
+	Local aRes     := {}
+	Local nRadio
+	Private cErro 	:= ""
+
+	nRadio := u_EscolheOperacao()
+
+	DEFINE MSDIALOG oDlg TITLE "Carga de Outlet " From 0,0 To 15,50
+	oSayArq := tSay():New(15,07,{||"Importar."},oDlg,,,,,,.T.,,,200,80)
+	oSayArq := tSay():New(45,07,{|| "Informe o local onde se encontra o arquivo para importação:"},oDlg,,,,,,.T.,,,200,80)
+	oGetArq := TGet():New(55,05,{|u| If(PCount()>0,cCaminho:=u,cCaminho)},oDlg,150,10,'@!',,,,,,,.T.,,,,,,,,,,'cCaminho')
+	oBtnArq := tButton():New(55,160,"Abrir...",oDlg,{|| cCaminho := cGetFile( "Arquivos CSV|*.csv|Arquivos CSV|*.csv", "Selecione o arquivo:",  1, cDirIni, .F., GETF_LOCALHARD, .F., .T. )},30,12,,,,.T.)
+	oBtnImp := tButton():New(80,050,"Importar",oDlg,{|| aRes := ProcessarOutlet(cCaminho,nRadio) },40,12,,,,.T.)
+	oBtnCan := tButton():New(80,110,"Cancelar",oDlg,{|| oDlg:End()},40,12,,,,.T.)
+	ACTIVATE MSDIALOG oDlg CENTERED
+
+
+Return aRes
+
+
+Static Function ProcessarOutlet(cCaminho,nRadio)
+	Local oProcess  := nil
+	Local aRes      := nil
+
+	If Empty(cCaminho)
+		MsgInfo("Selecione um arquivo",)
+		Return
+	ElseIf !File(cCaminho)
+		MsgInfo("Arquivo não localizado","Atenção")
+		Return
+	Else
+		oDlg:End()
+		oProcess := MsNewProcess():New({|lEnd| aRes:= SubirOutlet(cCaminho,nRadio)  },"Extraindo dados da planilha CSV","Efetuando a leitura do arquivo CSV...", .T.)
+		oProcess:Activate()
+	EndIf
+
+Return aRes
+
+Static Function SubirOutlet(cCaminho,nRadio)
+	Local lReturn
+	Local lEnd
+	Local i
+	Private cErro := ""
+
+	oFile := FWFileReader():New(cCaminho)
+	If oFile:Open() = .F.
+		ApMsgStop("não foi possivel efetuar a leitura do arquivo." + cArq, cMsgHead)
+		lReturn := .F.
+		Return lReturn
+	EndIf
+	aLines := oFile:GetAllLines()
+	If lEnd = .T.   //Verifica se não clicou no botão cancelar
+		ApMsgStop("Processo cancelado pelo usuario." + cArq, cMsgHead)
+		lReturn := .F.
+		Return lReturn
+	EndIf
+
+	For i:=2 to len(aLines)
+		cLinha  := aLines[i]
+		If Empty(cLinha) = .F.
+			cLinha := StrTran(StrTran(cLinha, '"', ''), ",", ".")
+			aLinha := Separa(cLinha, ';', .T.)
+			If Len(aLinha) > 0
+				u_AtualizaOutlet(aLinha[1],nRadio)
+			EndIf
+		EndIf
+	Next i
+
+	If !Empty(cErro)
+		u_LogCargaOutlet(cErro)
+	Endif
+	FWAlertSuccess("Carga de Outlet finalizada!", "Carga de Outlet")
+Return
+
+User Function AtualizaOutlet(cProduto,nRadio)
+	Local aArea		:= GetArea()
+	Local cDepto    := ""
+	Local lErro      := .F.
+
+	DbSelectArea('ZZZ')
+	ZZZ->(DbSetOrder(1))
+
+	DbSelectArea('SB1')
+	SB1->(DbSetOrder(1))
+	DbSelectArea('SB5')
+	SB5->(DbSetOrder(1))
+
+
+	if nRadio == 2 //Retirando de Outlet
+        Begin Transaction
+        if SB1->(DbSeek(xfilial("SB1")+cProduto))
+            If SB5->(DbSeek(xfilial("SB5")+cProduto))
+				If SB5->(RECLOCK("SB5",.F.))
+					SB5->B5_YDESPAD = 'S'
+					SB5->B5_YDESCLI = 'S'
+					SB5->B5_YDESCDP = 'S'
+					SB5->B5_YDESOCA = 'S'
+					SB5->B5_YDESCX  = 'S'
+					SB5->B5_YDESPRO = 'S'
+					SB5->B5_YACSUF  = 'S'
+					SB5->(msunlock())
+				else
+                    DisarmTransaction()
+					lErro := .T.
+					cErro += "Produto "+Alltrim(cProduto)+" com o registro travado na tabela SB5, tente novamente mais tarde - Retirando Outlet" +CHR(13)+CHR(10)
+				endif
+
+				if !lErro
+					If SB1->(RECLOCK("SB1",.F.))
+						SB1->B1_PESTOQ = 0
+						SB1->(msunlock())
+					else
+                        DisarmTransaction()
+						lErro := .T.
+						cErro += "Produto "+Alltrim(cProduto)+" com o registro travado na tabela SB1, tente novamente mais tarde - Retirando Outlet" +CHR(13)+CHR(10)
+					Endif
+				Endif
+			else
+				lErro := .T.
+				cErro += "Produto "+Alltrim(cProduto)+" não encontrado na tabela de preço, revise o dado - Retirando Outlet" +CHR(13)+CHR(10)
+			Endif
+
+        else
+
+            lErro := .T.
+			cErro += "Produto "+Alltrim(cProduto)+" não encontrado, revise o dado - Retirando Outlet" +CHR(13)+CHR(10)
+        endif
+        End Transaction
+	else //Subindo para Outlet
+
+		if SB1->(DbSeek(xfilial("SB1")+cProduto))
+			cDepto := cValtoChar(SB1->B1_YDEPTO)
+
+			Do case
+			Case cDepto $ ('2/3/7/8') //SAZONAL
+                Begin Transaction
+
+				If SB5->(DbSeek(xfilial("SB5")+cProduto))
+					If SB5->(RECLOCK("SB5",.F.))
+						SB5->B5_YDESPAD = 'S'
+						SB5->B5_YDESCLI = 'N'
+						SB5->B5_YDESCDP = 'S'
+						SB5->B5_YDESOCA = 'N'
+						SB5->B5_YDESCX  = 'N'
+						SB5->B5_YDESPRO = 'N'
+						SB5->B5_YACSUF  = 'N'
+						SB5->(msunlock())
+					else
+                        DisarmTransaction()
+						lErro := .T.
+						cErro += "Produto "+Alltrim(cProduto)+" com o registro travado na tabela SB5, tente novamente mais tarde" +CHR(13)+CHR(10)
+					endif
+
+					if !lErro
+						If SB1->(RECLOCK("SB1",.F.))
+							SB1->B1_PESTOQ = 1
+							SB1->(msunlock())
+						else
+                            DisarmTransaction()
+							lErro := .T.
+							cErro += "Produto "+Alltrim(cProduto)+" com o registro travado na tabela SB1, tente novamente mais tarde" +CHR(13)+CHR(10)
+						Endif
+					endif
+
+
+				else
+					lErro := .T.
+					cErro += "Produto "+Alltrim(cProduto)+" não encontrado na tabela de preço, revise o dado" +CHR(13)+CHR(10)
+				Endif
+
+                End Transaction
+
+			Case cDepto $ ('1/4/5/6')
+                Begin Transaction
+				If SB5->(DbSeek(xfilial("SB5")+cProduto))
+					If SB5->(RECLOCK("SB5",.F.))
+						SB5->B5_YDESPAD = 'S'
+						SB5->B5_YDESCLI = 'N'
+						SB5->B5_YDESCDP = 'N'
+						SB5->B5_YDESOCA = 'N'
+						SB5->B5_YDESCX  = 'N'
+						SB5->B5_YDESPRO = 'N'
+						SB5->B5_YACSUF  = 'N'
+						SB5->(msunlock())
+					else
+                        DisarmTransaction()
+						lErro := .T.
+						cErro += "Produto "+Alltrim(cProduto)+" com o registro travado na tabela SB5, tente novamente mais tarde" +CHR(13)+CHR(10)
+					endif
+
+					if !lErro
+						If SB1->(RECLOCK("SB1",.F.))
+							SB1->B1_PESTOQ = 1
+							SB1->(msunlock())
+						else
+                            DisarmTransaction()
+							lErro := .T.
+							cErro += "Produto "+Alltrim(cProduto)+" com o registro travado na tabela SB1, tente novamente mais tarde" +CHR(13)+CHR(10)
+						Endif
+					Endif
+				else
+					lErro := .T.
+					cErro += "Produto "+Alltrim(cProduto)+" não encontrado na tabela de preço, revise o dado" +CHR(13)+CHR(10)
+				Endif
+                End Transaction
+			EndCase
+
+
+		else
+			lErro := .T.
+			cErro += "Produto "+Alltrim(cProduto)+" não foi encontrado, revise o dado" +CHR(13)+CHR(10)
+		Endif
+
+	Endif
+
+	RestArea(aArea)
+Return
+
+
+User Function LogCargaOutlet(cMsg, cTitulo, nTipo, lEdit)
+	Local lRetMens := .F.
+	Local oDlgMens
+	Local oBtnOk, cTxtConf := ""
+	Local oFntTxt := TFont():New("Lucida Console",,-015,,.F.,,,,,.F.,.F.)
+	Default cMsg    := "..."
+	Default cTitulo := "Log de Outlet."
+	Default nTipo   := 1 // 1=Ok; 2= Confirmar e Cancelar
+	Default lEdit   := .F.
+
+	cTxtConf:='&Ok'
+	//Criando a janela centralizada com os botões
+	DEFINE MSDIALOG oDlgMens TITLE cTitulo FROM 000, 000  TO 300, 400 COLORS 0, 16777215 PIXEL
+	//Get com o Log
+	@ 002, 004 GET oMsg VAR cMsg OF oDlgMens MULTILINE SIZE 191, 121 FONT oFntTxt COLORS 0, 16777215 HSCROLL PIXEL
+	If !lEdit
+		oMsg:lReadOnly := .T.
+	EndIf
+	@ 127, 144 BUTTON oBtnOk  PROMPT cTxtConf   SIZE 051, 019 ACTION (lRetMens:=.T., oDlgMens:End()) OF oDlgMens PIXEL
+	ACTIVATE MSDIALOG oDlgMens CENTERED
+
+Return lRetMens
+
+User Function EscolheOperacao()
+	Local nOpc
+	Local bOk       := {||nOpc:= 1,oDlg:End()}
+	Local aOptions  := {"1 - Subir Outlet","2 - Retirar de Outlet"}
+	Local oDlg
+	Local nRadio
+
+	DEFINE MSDIALOG oDlg TITLE "Selecione a operação" FROM  10,10 TO 195,230 OF oDlg PIXEL STYLE DS_MODALFRAME
+
+	oRadio       := tRadMenu():New(25,20,aOptions,{|u|iif(PCount()>0,nRadio:=u,nRadio)},oDlg,,,,,,,,60,15,,,,.T.)
+	oTButtonOk   := SButton():New(50,15,1,bOk,oDlg,.T.,"OK")
+
+	//oBtnOk := tButton():New(50,15,"Ok",oDlg,bOk,40,12,,,,.T.)
+	oBtnCan := tButton():New(50,50,"Cancelar",oDlg,{|| oDlg:End()},40,12,,,,.T.)
+	ACTIVATE MSDIALOG oDLG CENTERED
+
+Return nRadio

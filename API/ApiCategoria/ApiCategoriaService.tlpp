@@ -1,0 +1,226 @@
+#include "tlpp-core.th"
+#include 'tlpp-rest.th'
+#include 'protheus.ch'
+#include 'parmtype.ch'
+#INCLUDE "TBICONN.CH"
+
+
+Class ApiCategoriaService
+	Public Data jResponse as Json
+	Public Data lErro     as Logical
+
+	Public method new()               as Object
+	Public method execute()           as json
+	Public method consultaCat()       as json
+	Public method CriarCat()       	  as json
+	Public method AlteraCat()         as json
+	Public method ExcluiCat()  		  as json
+
+EndClass
+
+
+Method execute() as Json Class ApiCategoriaService
+
+Return ::jResponse
+
+
+Method new() as Object Class ApiCategoriaService
+	::jResponse := JsonObject():New()
+Return Self
+
+
+Method consultaCat(cchave) as json class ApiCategoriaService
+	Local cQuery    as Character
+	Local aItens 		as Array
+	Local oDados 		as Object
+
+	::lErro := .F.
+	u_zConout("4")
+	If !Empty(cchave)
+        cQuery := " SELECT X5_FILIAL,X5_CHAVE,X5_DESCRI FROM SX5090 WHERE X5_TABELA = '02' AND X5_FILIAL = '10' AND X5_CHAVE = '"+cchave+"' AND D_E_L_E_T_ = '' AND X5_MSBLQL <> 1 "
+	else
+        cQuery := " SELECT X5_FILIAL,X5_CHAVE,X5_DESCRI FROM "+RetSqlName("SX5")+" 
+		cQuery += " WHERE X5_TABELA = '02' AND X5_FILIAL = '"+xFilial('SX5')+"' AND D_E_L_E_T_ = '' " 
+		cQuery += " AND X5_MSBLQL <> 1 AND X5_CHAVE NOT IN (
+		cQuery += " 'MC','SV','EM','MO',
+		cQuery += " 'IM','MA','AI','GN',
+		cQuery += " 'IF','II','KT','ME',
+		cQuery += " 'OI','PC','SM','SP',
+		cQuery += " 'IA','IN','MB','MM', 
+		cQuery += " 'MP','PA', 'PI','PP',
+		cQuery += " 'SL','GG','GE','DI',
+		cQuery += " 'PV','BN','95','A4')
+	Endif
+
+	MpSysOpenQuery(cQuery, "TMP")
+
+	If TMP->(EOF())
+		::lErro := .T.
+		::jResponse["code"] := 404
+		::jResponse["retorno"] := "Categoria "+Alltrim(cchave)+" nao encontrada"
+		Return ::jResponse
+	EndIf
+	u_zConout("5")
+
+    aItens := {}
+    ::jResponse["code"] := 200
+
+    While TMP->(!EOF())
+        oDados := JsonObject():New()
+        //oDados["filial"]    := Alltrim(TMP->X5_FILIAL)
+        oDados["chave"]     := Alltrim(TMP->X5_CHAVE)
+        oDados["descricao"] := Alltrim(TMP->X5_DESCRI)
+        aAdd(aItens, oDados)
+        TMP->(DbSkip())
+    End
+	 	::jResponse["categoria"] := aItens
+    TMP->(DbCloseArea())
+	Return ::jResponse
+
+    TMP->(DbCloseArea())
+Return ::jResponse
+
+Method CriarCat(oCategoria) as json class ApiCategoriaService
+	Local cChave := ''
+	Local cDescricao := ''
+
+	cChave 	   :=  Alltrim(oCategoria["chave"])
+	cDescricao :=  UPPER(Alltrim(oCategoria["descricao"]))
+
+	DbSelectArea('SX5')
+	SX5->(DbSetOrder(1))
+	SX5->(DbGoTop())
+
+	//Se conseguir posicionar, já existe
+	If SX5->(DbSeek(FWxFilial('SX5') + '02' + cChave))
+		::lErro := .T.
+		::jResponse["code"] := 409
+		::jResponse["retorno"] := "Categoria com chave "+Alltrim(cChave)+" - " +Alltrim(SX5->X5_DESCRI)+ " já existe, altere a chave informada"
+		Return ::jResponse
+
+	EndIf
+
+	if RecLock('SX5',.T.)
+		SX5->X5_FILIAL  := FWxFilial('SX5')
+		SX5->X5_TABELA  := '02'
+		SX5->X5_CHAVE   := cChave
+		SX5->X5_DESCRI  := cDescricao
+		SX5->X5_DESCSPA := cDescricao				
+		SX5->X5_DESCENG := cDescricao	
+		SX5->(MsUnlock())
+	else
+		::lErro := .T.
+		::jResponse["code"] := 500
+		::jResponse["retorno"] := 'Não foi possível criar a categoria '+cDescricao+' com chave: '+cChave+' !'
+	Endif
+
+	::jResponse["code"] := 201
+	::jResponse["retorno"] := 'Criada categoria '+cDescricao+' com chave: '+cChave+' com sucesso!'
+
+return ::jResponse
+
+
+
+Method AlteraCat(cChave,oBody) as json class ApiCategoriaService
+	Local cDescricao  :=  UPPER(Alltrim(oBody["descricao"]))
+	Local cDescriAtu := ''
+
+	::lErro := .F.
+	u_zConout("AlteraCat")
+
+	If Empty(cChave) .or. Empty(cDescricao)
+		::lErro := .T.
+		::jResponse["code"] := 422
+		::jResponse["retorno"] := "Parametro de id ou estrutura do body incorretos"
+		Return ::jResponse
+	endif
+
+	DbSelectArea('SX5')
+	SX5->(DbSetOrder(1))
+	SX5->(DbGoTop())
+	
+	If SX5->(DbSeek(FWxFilial('SX5') + '02' + cChave))
+
+		if SX5->(RecLock('SX5',.F.))
+			cDescriAtu := Alltrim(SX5->X5_DESCRI) 
+			SX5->X5_DESCRI  := cDescricao
+			SX5->X5_DESCSPA := cDescricao
+			SX5->X5_DESCENG := cDescricao
+
+			SX5->(MsUnlock())
+
+			::lErro := .F.
+			::jResponse["code"] := 200
+			::jResponse["retorno"] := "Categoria "+Alltrim(cChave)+" alterada de "+cDescriAtu+" para "+cDescricao+" com Sucesso!"
+		Endif
+		
+	else
+		::lErro := .T.
+		::jResponse["code"] := 404
+		::jResponse["retorno"] := "Categoria "+Alltrim(cChave)+" nao encontrada"
+		Return ::jResponse
+	Endif
+
+Return ::jResponse
+
+Method ExcluiCat(cChave) as json class ApiCategoriaService
+	Local cDescriAtu := ''
+
+	::lErro := .F.
+	u_zConout("Excluicat")
+
+	If Empty(cChave)
+		::lErro := .T.
+		::jResponse["code"] := 422
+		::jResponse["retorno"] := "Parametro de id incorreto"
+		Return ::jResponse
+	endif
+
+	DbSelectArea('SX5')
+	SX5->(DbSetOrder(1))
+	SX5->(DbGoTop())
+	
+	If SX5->(DbSeek(FWxFilial('SX5') + '02' + cChave))
+		cDescriAtu := Alltrim(SX5->X5_DESCRI)
+
+		if u_VerificaCategoria(cChave)	
+			if SX5->(RecLock('SX5',.F.))
+					SX5->(dbDelete())
+				SX5->(MsUnlock())
+				::lErro := .F.
+				::jResponse["code"] := 200
+				::jResponse["retorno"] := "Categoria "+Alltrim(cChave)+" - " + cDescriAtu+" excluida com Sucesso!"
+			Endif
+		else
+			::lErro := .T.
+			::jResponse["code"] := 409
+			::jResponse["retorno"] := "Existem produtos nessa categoria, por favor trate os restantes."
+			Return ::jResponse
+
+		Endif
+	else
+		::lErro := .T.
+		::jResponse["code"] := 404
+		::jResponse["retorno"] := "Categoria "+Alltrim(cChave)+" não encontrada"
+		Return ::jResponse
+	Endif
+
+Return ::jResponse
+
+User Function VerificaCategoria(cChave) //Discutir para validar regra com intellicomex
+	Local cQuery1 := ''
+	Local lValido := .T. 
+
+	cQuery1 :=  " SELECT B1_COD,B1_ALTER2,B1_ATIVO,B1_TIPO,B1_GRUPO,B1_YDEPTO "
+	cQuery1 +=  " FROM "+RetSqlName("SB1")+" SB1 "
+	cQuery1 +=  " WHERE B1_FILIAL = ''  "
+	cQuery1 +=  " AND B1_ATIVO IN ('A','D')  "
+	cQuery1 +=  " AND B1_TIPO = '"+cChave+ "'"
+	cQuery1 +=  " AND SB1.D_E_L_E_T_ = '' "
+	MpSysOpenQuery(cQuery1, "TP1")
+
+	if TP1->(EOF()) //se houver produtos nessa categoria
+		lValido := .F.
+	Endif
+Return lValido
+

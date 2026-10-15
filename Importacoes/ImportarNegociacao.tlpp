@@ -1,0 +1,199 @@
+#INCLUDE "RWMAKE.CH"
+#INCLUDE "TOPCONN.CH"
+#INCLUDE "PROTHEUS.CH"
+#INCLUDE "AP5MAIL.CH"
+#INCLUDE "INKEY.CH"
+#INCLUDE "FIVEWIN.CH"
+#INCLUDE "TBICONN.CH"
+#INCLUDE "COLORS.CH"
+#INCLUDE "FONT.CH"
+#INCLUDE 'TLPP-CORE.TH'
+
+
+User Function ImportarNegociacao()
+	Local cCaminho := ""
+	Local cDirIni  := "C:/"
+	Local aRes     := {}
+	Private cErro 	:= ""
+	DEFINE MSDIALOG oDlg TITLE "Importação CSV " From 0,0 To 15,50
+	oSayArq := tSay():New(15,07,{||"Importar planilha para negociacao"},oDlg,,,,,,.T.,,,200,80)
+	oSayArq := tSay():New(45,07,{|| "Informe o local onde se encontra o arquivo para importação:"},oDlg,,,,,,.T.,,,200,80)
+	oGetArq := TGet():New(55,05,{|u| If(PCount()>0,cCaminho:=u,cCaminho)},oDlg,150,10,'@!',,,,,,,.T.,,,,,,,,,,'cCaminho')
+	oBtnArq := tButton():New(55,160,"Abrir...",oDlg,{|| cCaminho := cGetFile( "Arquivos CSV|*.csv|Arquivos CSV|*.csv", "Selecione o arquivo:",  1, cDirIni, .F., GETF_LOCALHARD, .F., .T. )},30,12,,,,.T.)
+	oBtnImp := tButton():New(80,050,"Importar",oDlg,{|| aRes := ProcessarPrecoNegociacao(cCaminho) },40,12,,,,.T.)
+	oBtnCan := tButton():New(80,110,"Cancelar",oDlg,{|| oDlg:End()},40,12,,,,.T.)
+	ACTIVATE MSDIALOG oDlg CENTERED
+
+Return aRes
+
+
+Static Function ProcessarPrecoNegociacao(cCaminho)
+	Local oProcess  := nil
+	Local aRes      := nil
+
+	If Empty(cCaminho)
+		MsgInfo("Selecione um arquivo",)
+		Return
+	ElseIf !File(cCaminho)
+		MsgInfo("Arquivo não localizado","Atenção")
+		Return
+	Else
+		oDlg:End()
+		oProcess := MsNewProcess():New({|lEnd| aRes:= SubirPrecoNegociacao(cCaminho)  },"Extraindo dados da planilha CSV","Efetuando a leitura do arquivo CSV...", .T.)
+		oProcess:Activate()
+	EndIf
+
+Return aRes
+
+Static Function SubirPrecoNegociacao(cCaminho)
+    Local lReturn
+    Local lEnd
+    Local i
+	Private cErro := ""
+
+	oFile := FWFileReader():New(cCaminho)
+	If oFile:Open() = .F.
+		ApMsgStop("não foi possivel efetuar a leitura do arquivo." + cArq, cMsgHead)
+		lReturn := .F.
+		Return lReturn
+	EndIf
+	aLines := oFile:GetAllLines()
+	If lEnd = .T.   //Verifica se não clicou no botão cancelar
+		ApMsgStop("Processo cancelado pelo usuario." + cArq, cMsgHead)
+		lReturn := .F.
+		Return lReturn
+	EndIf
+
+    For i:=2 to len(aLines)
+		cLinha  := aLines[i]
+		If Empty(cLinha) = .F.
+			cLinha := StrTran(StrTran(cLinha, '"', ''), ",", ".")
+			aLinha := Separa(cLinha, ';', .T.)
+			If Len(aLinha) > 0
+				//ncont++
+				CriaNegociacao(aLinha[1],val(aLinha[2]),aLinha[3],aLinha[4],aLinha[5],aLinha[6],val(aLinha[7]),val(aLinha[8]),val(aLinha[9]),val(aLinha[10]),val(aLinha[11]),val(aLinha[12]),val(aLinha[13]))
+			EndIf
+		EndIf
+	Next i
+
+	If !Empty(cErro)
+		u_LogCargaNegocia(cErro)
+	Endif
+	//FWAlertSuccess("Rodou "+cValtoChar(ncont)+" familias")
+Return
+
+Static Function CriaNegociacao(cFamilia,nPreco,cMoeda,cVia,cPorto,cDestino,nCaixag,nCaixaP,nBag,nAltura,nLargura,nComprimento,nPeso)
+	Local aArea		:= GetArea()
+	Local nDepto
+
+    DbSelectArea('ZZZ')
+    ZZZ->(DbSetOrder(1))                                               
+                                                   
+    If ZZZ->(DbSeek(xfilial("ZZZ")+Padr(Alltrim(cFamilia),TamSx3("ZZZ_ALTER2")[1])))
+		nDepto := U_RetDept(Alltrim(ZZZ->ZZZ_GRUPO))
+
+        DbSelectArea('ZCM')
+
+		Do Case
+			Case Empty(ZZZ->ZZZ_UNICX)
+				cErro += "Familia "+Alltrim(cFamilia)+" não possui o campo de caixa preenchido, logo não foi criado negociação, revise cadastro da familia"
+			Case Empty(ZZZ->ZZZ_CUBAGE)
+				cErro += "Familia "+Alltrim(cFamilia)+" não possui o campo de cubagem preenchido, logo não foi criado negociação, revise cadastro da familia"
+			Case Empty(ZZZ->ZZZ_ESPESS) .or. Empty(ZZZ->ZZZ_LARG) .or. Empty(ZZZ->ZZZ_COMP)
+				cErro += "Familia "+Alltrim(cFamilia)+" não possui as medidas da caixa preenchidas, logo não foi criado negociação, revise cadastro da familia"
+			OtherWise
+			if	!Empty(ZZZ->ZZZ_UNICX)   .and. ;
+				!Empty(ZZZ->ZZZ_CUBAGE)  .and. ;
+				!Empty(ZZZ->ZZZ_ESPESS)  .and. ;
+				!Empty(ZZZ->ZZZ_LARG) 	 .and. ;
+				!Empty(ZZZ->ZZZ_COMP) 
+
+				cFamilia := Padr(Alltrim(cFamilia), TamSx3("ZCM_CODFAM")[1])
+				RegToMemory("ZCM",.F.,.F.)
+
+				M->ZCM_CODFAM  := Padr(Alltrim(cFamilia), TamSx3("ZCM_CODFAM")[1])
+				M->ZCM_ALTURA  := nAltura
+				M->ZCM_LARG    := nLargura
+				M->ZCM_COMP    := nComprimento
+				M->ZCM_CUBAGE  := nLargura * nComprimento * nAltura / 1000000
+				M->ZCM_MOEDA   := iif(Alltrim(cMoeda) == "USD","US$",Alltrim(cMoeda))
+				M->ZCM_VIA     := Alltrim(cVia)
+				M->ZCM_PORTO   := Alltrim(cPorto)
+				M->ZCM_DESTIN  := Alltrim(cDestino)
+				M->ZCM_PRCUNI  := nPreco
+				M->ZCM_UNICX   := nCaixag
+				M->ZCM_UNICX2  := nCaixaP
+				M->ZCM_UNBAGF  := nBag
+				M->ZCM_PESO    := nPeso
+				M->ZCM_PESCUB  := ZZZ->ZZZ_PESCUB
+
+		
+				if u_ValidPrc(ZZZ->ZZZ_ALTER2,ZZZ->ZZZ_TIPO,nDepto,.T.)
+					RecLock( "ZCM", .T. )  
+					ZCM->ZCM_FILIAL  := xFilial("ZCM")
+					ZCM->ZCM_CODFAM  := ZZZ->ZZZ_ALTER2
+					ZCM->ZCM_CODFOR  := ZZZ->ZZZ_PROC
+					ZCM->ZCM_DATA    := dDataBase //STOD(alltrim(aDados[ nI, 16 ])) //dDataBase                                                                    
+					ZCM->ZCM_TIPDOC  := '1'
+					ZCM->ZCM_DOCUME  := 'Gerado por Import - ' + Alltrim(cUserName)
+					ZCM->ZCM_MOEDA   := iif(Alltrim(cMoeda) == "USD","US$",Alltrim(cMoeda))
+					ZCM->ZCM_VIA     := cVia
+					ZCM->ZCM_PORTO   := cPorto
+					ZCM->ZCM_DESTIN  := cDestino
+					ZCM->ZCM_PRCUNI  := nPreco
+					ZCM->ZCM_PRCSEG  := ROUND(nPreco * ZZZ->ZZZ_CONV,4)  
+					ZCM->ZCM_PRCCX   := ROUND(nPreco * ZZZ->ZZZ_UNICX,4) 
+					ZCM->ZCM_UNICX   := nCaixag
+					ZCM->ZCM_UNICX2  := nCaixaP
+					ZCM->ZCM_UNBAGF  := nBag
+					ZCM->ZCM_ALTURA  := nAltura
+					ZCM->ZCM_LARG    := nLargura
+					ZCM->ZCM_COMP    := nComprimento
+					ZCM->ZCM_PESO    := nPeso
+					ZCM->ZCM_CUBAGE  := nLargura * nComprimento * nAltura / 1000000
+					ZCM->ZCM_PESCUB  := ZZZ->ZZZ_PESCUB
+					ZCM->ZCM_EFETIV  := Strtran(StrTran(AllTrim(GetSX3Cache("ZCM_EFETIV","X3_RELACAO")), '"', ''), "'", '')
+					ZCM->ZCM_CUSGER  := M->ZCM_CUSGER
+					ZCM->ZCM_COEFIC  := M->ZCM_COEFIC
+					ZCM->ZCM_COEFTI  := M->ZCM_COEFTI
+					MsUnLock()
+					U_EICATUSASJ(ZZZ->ZZZ_ALTER2,'')
+				else
+					cErro += "Familia "+Alltrim(cFamilia)+" não foi possível criar negociação devido ao coeficiente, ajuste o preço ou revise as informações " +CHR(13)+CHR(10)
+				Endif
+			else
+				cErro += "Familia "+Alltrim(cFamilia)+" não encontrada, logo não foi criado negociação, revise o csv" +CHR(13)+CHR(10)
+			Endif
+		End
+
+	else
+		cErro += "Familia "+Alltrim(cFamilia)+" não encontrada, logo não foi criado negociação, revise o csv" +CHR(13)+CHR(10)
+    Endif
+
+	RestArea(aArea)
+
+Return
+
+
+User Function LogCargaNegocia(cMsg, cTitulo, nTipo, lEdit)
+	Local lRetMens := .F.
+	Local oDlgMens
+	Local oBtnOk, cTxtConf := ""
+	Local oFntTxt := TFont():New("Lucida Console",,-015,,.F.,,,,,.F.,.F.)
+	Default cMsg    := "..."
+	Default cTitulo := "Log das familias na carga."
+	Default nTipo   := 1 // 1=Ok; 2= Confirmar e Cancelar
+	Default lEdit   := .F.
+
+	cTxtConf:='&Ok'
+	//Criando a janela centralizada com os botões
+	DEFINE MSDIALOG oDlgMens TITLE cTitulo FROM 000, 000  TO 300, 400 COLORS 0, 16777215 PIXEL
+	//Get com o Log
+	@ 002, 004 GET oMsg VAR cMsg OF oDlgMens MULTILINE SIZE 191, 121 FONT oFntTxt COLORS 0, 16777215 HSCROLL PIXEL
+	If !lEdit
+		oMsg:lReadOnly := .T.
+	EndIf
+	@ 127, 144 BUTTON oBtnOk  PROMPT cTxtConf   SIZE 051, 019 ACTION (lRetMens:=.T., oDlgMens:End()) OF oDlgMens PIXEL
+	ACTIVATE MSDIALOG oDlgMens CENTERED
+
+Return lRetMens

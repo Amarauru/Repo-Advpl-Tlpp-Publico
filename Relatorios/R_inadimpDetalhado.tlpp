@@ -1,0 +1,235 @@
+
+#INCLUDE "RWMAKE.CH"
+#INCLUDE "TOPCONN.CH"
+#INCLUDE "COLORS.CH"
+#INCLUDE "FONT.CH"
+#INCLUDE "PROTHEUS.CH"
+#INCLUDE "INKEY.CH"
+#INCLUDE "FIVEWIN.CH"
+#INCLUDE "TBICONN.CH"
+#INCLUDE 'TLPP-CORE.TH'
+#INCLUDE "TOTVS.CH"
+#INCLUDE "FWMVCDEF.CH"
+
+/***************************************************************************************************************************************************
+*+------------------------------------------------------------------------------------------------------------------------------------------------+*
+*|Funcao      | R_InadimpDetalhado  | Autor |    Pedro Almeida                                                                                    |*
+*+------------+-----------------------------------------------------------------------------------------------------------------------------------+*
+*|Data        | 09.12.2025                                                                                                                        |*
+*+------------+-----------------------------------------------------------------------------------------------------------------------------------+*
+*|Descricao   | Rotina para exportar os clientes inadimplentes com informaÃ§Ãµe detalhadas                                                          |*
+*+------------+-----------------------------------------------------------------------------------------------------------------------------------+*
+
+
+/* 
+User Function TesteValid()  // Carregar direto pelo smartclient SEM menu
+	MsApp():New("SIGAFAT")
+	oApp:CreateEnv()
+	PtSetTheme("OCEAN")
+	oApp:cStartProg := "u_rValid"
+	oApp:Activate()
+Return Nil
+ */
+
+User Function R_InadimpDetalhado()
+
+    if !U_VerifZbr("QA",Upper(cUserName))
+        MsgAlert("Usuario sem permissao para executar este relatorio!","Atenção")
+        Return
+    Endif
+
+	Processa( {|| u_InadimpDetalhado()}, "Selecionando registros, Aguarde..." , "" , .T. )
+
+Return
+
+User Function InadimpDetalhado() //funcao para exportar os clientes do Credito com Titulos vencidos
+    Local aArea := GetArea()
+	Local oExcel := FWMSEXCEL():New()
+	Local cTitle       := "Inadimplencia Detalhado"
+	Local cWorkSheet 	:= "Inadimplencia Detalhado"
+	Local cMask        := ""
+	Local nDefaultMask := 0
+	Local cDefaultDir  := ""
+	Local nOptions     := GETF_LOCALHARD+GETF_NETWORKDRIVE+GETF_RETDIRECTORY
+	Local cDir       := ""
+	Local cFile      := "Inadimplencia_Detalhado" + DToS(Date()) + ".xml"
+	Local cQuery
+	Local aPergs := {}
+	Local nTotal := 0
+	Local nAtual := 0
+    Local aRegiao := {"TODAS","NORTE","CENTRO-OESTE","NORDESTE","SUDESTE","SUL"}
+    Local cRegiao := ""
+
+    aAdd(aPergs, {1, "Emissao de     "         , Date(),  "", ".T.", "", ".T.", 50,  .F.})             //MV_PAR01
+	aAdd(aPergs, {1, "Emissao ate    "         , Date(),  "", ".T.", "", ".T.", 50,  .T.})             //MV_PAR02
+    aAdd(aPergs, {1, "Vencimento de  "         , Date(),  "", ".T.", "", ".T.", 50,  .F.})             //MV_PAR03
+    aAdd(aPergs, {1, "Vencimento ate "         , Date(),  "", ".T.", "", ".T.", 50,  .T.})             //MV_PAR04
+    aAdd(aPergs, {1, "Portador "               , space(TamSX3("E1_PORTADO")[1]),,".T.",'SA6',".T.",40,  .F.})  //MV_PAR05
+    aAdd(aPergs, {1, "Conta "                  , space(TamSX3("E1_CONTA")[1])  ,,".T.",'SA6',".T.",40,  .F.})  //MV_PAR06
+    aAdd(aPergs, {1, "Agencia "                , space(TamSX3("E1_AGEDEP")[1]) ,,".T.",'SA6',".T.",40,  .F.})  //MV_PAR07
+    aAdd(aPergs, {3,"Regiao" ,01 ,aRegiao,55,".F.",.T.,,}) //MV_PAR08
+
+	If !parambox(aPergs,"Informe os parametros")
+		Return
+	EndIf
+
+	oExcel:AddworkSheet(cWorkSheet)
+	oExcel:AddTable (cWorkSheet,cTitle)
+
+
+	cDir := cGetFile(cMask,cTitle,nDefaultMask,cDefaultDir,,nOptions)
+
+	oExcel:AddColumn(cWorkSheet,cTitle, "Filial"           ,1,1)
+    oExcel:AddColumn(cWorkSheet,cTitle, "Codigo Cliente"   ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle, "Cpf/Cnpj"         ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle, "Nome Cliente"     ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle, "Nome Fantasia"    ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle, "Prefixo"          ,1,1)
+    oExcel:AddColumn(cWorkSheet,cTitle, "Tipo"             ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle, "Titulo"           ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle, "Parcela"          ,1,1)
+    oExcel:AddColumn(cWorkSheet,cTitle, "Natureza"         ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle, "Vencimento Real"  ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle, "Valor Atual"      ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle, "Portador"         ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle, "Conta"            ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle, "Agencia"          ,1,1)
+	oExcel:AddColumn(cWorkSheet,cTitle, "Nosso Numero"     ,1,1)
+    oExcel:AddColumn(cWorkSheet,cTitle, "Endereco"         ,1,1)
+    oExcel:AddColumn(cWorkSheet,cTitle, "Bairro"           ,1,1)
+    oExcel:AddColumn(cWorkSheet,cTitle, "Municipio"        ,1,1)
+    oExcel:AddColumn(cWorkSheet,cTitle, "Cep"              ,1,1)
+    oExcel:AddColumn(cWorkSheet,cTitle, "Estado"           ,1,1)
+    oExcel:AddColumn(cWorkSheet,cTitle, "Telefone1"        ,1,1)
+    oExcel:AddColumn(cWorkSheet,cTitle, "Telefone2"        ,1,1)
+    oExcel:AddColumn(cWorkSheet,cTitle, "Email"            ,1,1)
+    oExcel:AddColumn(cWorkSheet,cTitle, "Regiao"           ,1,1)
+
+    cQuery :=" SELECT                                "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     E1_FILIAL   FILIAL          ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     A1_COD      COD_CLI         ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     A1_CGC      CPF_CNPJ        ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     A1_NREDUZ   NOME_CLI        ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     A1_NOME     NOME_FANTASIA   ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     E1_PREFIXO  PREFIXO         ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     E1_TIPO     TIPO            ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     E1_NUM      TITULO          ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     E1_PARCELA  PARCELA         ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     E1_VENCREA  VENCIMENTO_REAL ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     E1_SALDO    VALOR_ATUAL     ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     E1_PORTADO  PORTADOR        ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     E1_CONTA    CONTA           ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     E1_AGEDEP   AGENCIA         ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     E1_NUMBCO   NOSSO_NUMERO    ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     A1_END      ENDERECO        ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     A1_BAIRRO   BAIRRO          ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     A1_MUN      MUNICIPIO       ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     A1_CCEP     CEP             ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     A1_EST      ESTADO          ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     A1_TEL      TELEFONE        ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     A1_TELEX    TELEFONE2       ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     A1_EMAIL    EMAIL1          ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     E1_NATUREZ  NATUREZA        ,     "                                                                                              +CHR(13)+CHR(10)
+    cQuery +="     X5_DESCRI   REGIAO                "                                                                                              +CHR(13)+CHR(10)
+    cQuery +=" FROM "+RETSQLNAME("SE1")+" SE1 "                                                                                                     +CHR(13)+CHR(10)
+    cQuery +=" INNER JOIN "+RETSQLNAME("SA1")+" A1 ON A1_FILIAL = E1_FILIAL AND E1_CLIENTE = A1_COD AND E1_LOJA = A1_LOJA AND A1.D_E_L_E_T_ = ''  " +CHR(13)+CHR(10)
+    cQuery +=" INNER JOIN "+RETSQLNAME("SX5")+" SX5 ON X5_TABELA = '_R' AND X5_CHAVE = A1_EST AND SX5.D_E_L_E_T_ = ''  "                            +CHR(13)+CHR(10)
+    cQuery +=" WHERE SE1.E1_TIPO IN ('NF','CH','CHD') "                                                                                             +CHR(13)+CHR(10)
+    cQuery +="     AND SE1.E1_FILIAL IN ('08','10','14')   "                                                                                        +CHR(13)+CHR(10)
+    cQuery +="     AND (SE1.E1_NATUREZ between '10101' AND '10108' OR SE1.E1_NATUREZ LIKE '%TEF%') "                                                +CHR(13)+CHR(10)
+    cQuery +="     AND SE1.E1_MOEDA = '1'  "                                                                                                        +CHR(13)+CHR(10)
+    cQuery +="     AND SE1.D_E_L_E_T_ = ' '    "                                                                                                    +CHR(13)+CHR(10)
+    cQuery +="     AND SE1.E1_SALDO > 0    "                                                                                                        +CHR(13)+CHR(10)
+    cQuery +="     AND SE1.E1_EMISSAO BETWEEN '"+DTOS(MV_PAR01)+"' AND '"+DTOS(MV_PAR02)+"'"                                                        +CHR(13)+CHR(10)
+    cQuery +="     AND SE1.E1_VENCREA BETWEEN '"+DTOS(MV_PAR03)+"' AND '"+DTOS(MV_PAR04)+"'"                                                        +CHR(13)+CHR(10)
+
+    If !Empty(Alltrim(MV_PAR05))
+        cQuery +="      AND SE1.E1_PORTADO = '"+MV_PAR05+"' "                                                                                       +CHR(13)+CHR(10)
+    Endif
+
+    If !Empty(Alltrim(MV_PAR06))
+        cQuery +="      AND SE1.E1_CONTA   = '"+MV_PAR06+"'"                                                                                        +CHR(13)+CHR(10)
+    Endif
+
+    If !Empty(Alltrim(MV_PAR07))
+        cQuery +="      AND SE1.E1_AGEDEP  = '"+MV_PAR07+"'"                                                                                        +CHR(13)+CHR(10)
+    Endif
+
+    Do Case 
+    Case MV_PAR08 == 1
+        cRegiao := ''
+    Case MV_PAR08 == 2
+        cRegiao := 'NORTE'
+    Case MV_PAR08 == 3
+        cRegiao := 'CENTRO-OESTE'
+    Case MV_PAR08 == 4
+        cRegiao := 'NORDESTE' 
+    Case MV_PAR08 == 5
+        cRegiao := 'SUDESTE' 
+    Case MV_PAR08 == 6
+        cRegiao := 'SUL'
+    EndCase
+
+    If !Empty(cRegiao)
+       cQuery +="      AND SX5.X5_DESCRI = '"+cRegiao+"'"                                                                                     +CHR(13)+CHR(10)
+    Endif
+    cQuery +="  ORDER BY COD_CLI    "
+    MpSysOpenQuery(cQuery,"QRY")
+
+	dbSelectArea('QRY')
+	QRY->(Dbgotop())
+
+	Count To nTotal
+	ProcRegua(nTotal)
+
+	QRY->(Dbgotop())
+	if QRY->(EOF())
+		QRY->(DbCloseArea())
+		MsgAlert("Nao existem registros selecionados, verifique as datas informadas!!!","Atencao")
+		Return
+	Endif
+
+
+	While !QRY->(Eof())
+    
+		nAtual++
+
+		IncProc('Buscando Registros....' + cValToChar(nAtual) + ' de ' + cValToChar(nTotal) + '...')
+
+        oExcel:AddRow(cWorkSheet,cTitle,{QRY->FILIAL           ,;
+        QRY->COD_CLI                                           ,;
+        QRY->CPF_CNPJ                                          ,;
+        QRY->NOME_CLI                                          ,;
+        QRY->NOME_FANTASIA                                     ,;
+        QRY->PREFIXO                                           ,;
+        QRY->TIPO                                              ,;
+        QRY->TITULO                                            ,;
+        QRY->PARCELA                                           ,;
+        QRY->NATUREZA                                          ,;
+        Stod(QRY->VENCIMENTO_REAL)                             ,;
+        TRANSFORM(QRY->VALOR_ATUAL,"@E 9,999,999.99")          ,;
+        QRY->PORTADOR                                          ,;
+        QRY->CONTA                                             ,;
+        QRY->AGENCIA                                           ,;
+        QRY->NOSSO_NUMERO                                      ,;
+        QRY->ENDERECO                                          ,;
+        QRY->BAIRRO                                            ,;
+        QRY->MUNICIPIO                                         ,;
+        QRY->CEP                                               ,;
+        QRY->ESTADO                                            ,;
+        QRY->TELEFONE                                          ,;
+        QRY->TELEFONE2                                         ,;
+        QRY->EMAIL1                                            ,;
+        QRY->REGIAO})
+        QRY->(DbSkip())
+	EndDo
+
+
+	QRY->(DbCloseArea()) //Finalizando a primeira consulta
+
+	oExcel:Activate()
+	oExcel:GetXMLFile(cDir+cFile)
+	MsgInfo("Arquivo gerado em "+cDir+cFile)
+    Restarea(aArea)
+Return
+

@@ -1,0 +1,191 @@
+#include "tlpp-core.th"
+#include 'tlpp-rest.th'
+#include 'protheus.ch'
+#include 'parmtype.ch'
+#INCLUDE "TBICONN.CH"
+
+Class ApiCategoriaController
+	Data jResponse  as Json
+	Data oService   as Object
+
+	Public Method new() as Object
+
+	@Get("/api/v1/consultacategoria")
+	Public Method consultacategoria() as Logical
+
+	@Get("/api/v1/consultacategoria/:id")
+	Public Method consultacategoriaID() as Logical
+
+	@Post("/api/v1/criarCategoria")
+	Public Method criarCategoria() as Logical
+
+	@Put("/api/v1/AlterarCategoria/:id")
+	Public Method AlterarCategoria() as Logical
+
+	@Delete("/api/v1/ExcluirCategoria/:id")
+	Public Method ExcluirCategoria() as Logical
+
+EndClass
+
+
+Method new() as Object Class ApiCategoriaController
+	::oService  := ApiCategoriaService():new()
+	::jResponse := JsonObject():new()
+Return self
+
+Method consultacategoria() as Logical Class ApiCategoriaController
+	Local lAtivAmb := .F. as Logical
+
+	u_zConout("Entrou no consultacategoria do ApiCategoriaController")
+
+	If Select("SX2") == 0
+		RPCClearEnv() 
+		RpcSetEnv('09','10', , , , GetEnvServer(), {})
+		lAtivAmb := .T.
+	EndIf
+
+	oRest:setKeyHeaderResponse('Content-Type','application/json; charset=utf-8')
+
+    ::oService:consultacat()
+
+	oRest:SetStatusCode(::oService:jresponse['code'])
+
+	oRest:setResponse(::oService:execute())
+
+	If lAtivAmb 
+		RpcClearEnv()
+	Endif
+
+Return .T.
+
+Method consultacategoriaID() as Logical Class ApiCategoriaController
+	Local lAtivAmb := .F. as Logical
+	Local cCategoria := "" as Character
+
+	u_zConout("Entrou no consultacategoriaID do ApiCategoriaController")
+	jPath := oRest:getPathParamsRequest()
+
+	cCategoria := jPath['id']
+	
+	if ValType(cCategoria) != "C"
+		oRest:SetStatusCode(400)
+		oRest:setResponse('{"error":"Parâmetro id em formato incorreto"}')
+		Return .F.
+	Endif
+
+	If Select("SX2") == 0
+		RPCClearEnv() 
+		RpcSetEnv('09','10', , , , GetEnvServer(), {})
+		lAtivAmb := .T.
+	EndIf
+
+	oRest:setKeyHeaderResponse('Content-Type','application/json; charset=utf-8')
+
+    ::oService:consultacat(cCategoria)
+
+	oRest:SetStatusCode(::oService:jresponse['code'])
+
+	oRest:setResponse(::oService:execute())
+
+	If lAtivAmb 
+		RpcClearEnv()
+	Endif
+
+Return .T.
+
+Method CriarCategoria() as Logical Class ApiCategoriaController
+	Local oBody as Object
+	Local lAtivAmb := .F. as Logical
+	oBody := JsonObject():New()
+
+	oBody:fromJson( oRest:GetBodyRequest() )
+
+	If Select("SX2") == 0
+		RPCClearEnv()
+		RpcSetEnv('09',"10", , , , GetEnvServer(), { })
+		lAtivAmb := .T.
+	EndIf
+
+	oRest:setKeyHeaderResponse('Content-Type','application/json; charset=utf-8')
+
+	::oService:CriarCat(oBody)
+
+	oRest:SetStatusCode(::oService:jresponse['code'])
+	oRest:setResponse(::oService:execute())
+
+	If lAtivAmb == .T.
+		RpcClearEnv()
+	EndIF  
+Return .T.
+
+Method AlterarCategoria() as Logical Class ApiCategoriaController
+	Local lAtivAmb := .F. as Logical
+	Local cCategoria := "" as Character
+	Local oBody := JsonObject():New()
+
+	u_zConout("Entrou no AlterarCategoria do ApiCategoriaController")
+	jPath := oRest:getPathParamsRequest()
+	cCategoria := jPath['id']
+
+	oBody:fromJson( oRest:GetBodyRequest() )
+	if ValType(cCategoria) != "C"
+		oRest:SetStatusCode(400)
+		oRest:setResponse('{"error":"Parâmetro id em formato incorreto"}')
+		Return .F.
+	Endif
+
+	If Select("SX2") == 0
+		RPCClearEnv() 
+		RpcSetEnv('09','10', , , , GetEnvServer(), {})
+		lAtivAmb := .T.
+	EndIf
+
+	oRest:setKeyHeaderResponse('Content-Type','application/json; charset=utf-8')
+
+    ::oService:AlteraCat(cCategoria,oBody)
+
+	oRest:SetStatusCode(::oService:jresponse['code'])
+
+	oRest:setResponse(::oService:execute())
+
+	If lAtivAmb 
+		RpcClearEnv()
+	Endif
+
+Return .T.
+
+Method ExcluirCategoria() as Logical Class ApiCategoriaController
+	Local lAtivAmb := .F. as Logical
+	Local cCategoria := "" as Character
+
+	u_zConout("Entrou no ExcluirCategoria do ApiCategoriaController")
+	jPath := oRest:getPathParamsRequest()
+
+	cCategoria := jPath['id']
+	
+	if ValType(cCategoria) != "C"
+		oRest:SetStatusCode(400)
+		oRest:setResponse('{"error":"Parâmetro id em formato incorreto"}')
+		Return .F.
+	Endif
+
+	If Select("SX2") == 0
+		RPCClearEnv() 
+		RpcSetEnv('09','10', , , , GetEnvServer(), {})
+		lAtivAmb := .T.
+	EndIf
+
+	oRest:setKeyHeaderResponse('Content-Type','application/json; charset=utf-8')
+
+    ::oService:ExcluiCat(cCategoria)
+
+	oRest:SetStatusCode(::oService:jresponse['code'])
+
+	oRest:setResponse(::oService:execute())
+
+	If lAtivAmb 
+		RpcClearEnv()
+	Endif
+
+Return .T.
+

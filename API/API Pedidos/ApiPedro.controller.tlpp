@@ -1,0 +1,94 @@
+#include "tlpp-core.th"
+#include 'tlpp-rest.th'
+#include 'protheus.ch'
+#include 'parmtype.ch'
+#INCLUDE "TBICONN.CH"
+namespace painel
+
+Class RqController
+	Data jResponse  as Json
+	Data oService   as Object
+
+	Public Method new() as Object
+
+	@Get("/api/v1/consultaped")
+	Public Method consultaped() as Logical
+
+	@Get("/api/v1/consultaped/:id")
+	Public Method consultapedID() as Logical
+
+EndClass
+
+
+Method new() as Object Class RqController
+	::oService  := RqService():new()
+	::jResponse := JsonObject():new()
+Return self
+
+Method consultaped() as Logical Class RqController
+	Local lAtivAmb := .F. as Logical
+
+	u_zConout("Entrou no consultaped do RqController")
+
+	If Select("SX2") == 0
+		RPCClearEnv() 
+		RpcSetEnv('09','10', , , , GetEnvServer(), {})
+		lAtivAmb := .T.
+	EndIf
+
+	oRest:setKeyHeaderResponse('Content-Type','application/json; charset=utf-8')
+
+    ::oService:consultaped()
+
+	If ::oService:lErro
+		oRest:SetStatusCode(404)
+	Else
+		oRest:SetStatusCode(200)
+	EndIf
+
+	oRest:setResponse(::oService:execute())
+
+	If lAtivAmb 
+		RpcClearEnv()
+	Endif
+
+Return .T.
+
+Method consultapedID() as Logical Class RqController
+	Local lAtivAmb := .F. as Logical
+	Local cPedido := "" as Character
+
+	u_zConout("Entrou no consultapedID do RqController")
+	jPath := oRest:getPathParamsRequest()
+
+	cPedido := jPath['id']
+	
+	if ValType(cPedido) != "C"
+		oRest:SetStatusCode(400)
+		oRest:setResponse('{"error":"Parâmetro id com problema"}')
+		Return .F.
+	Endif
+
+	If Select("SX2") == 0
+		RPCClearEnv() 
+		RpcSetEnv('09','10', , , , GetEnvServer(), {})
+		lAtivAmb := .T.
+	EndIf
+
+	oRest:setKeyHeaderResponse('Content-Type','application/json; charset=utf-8')
+
+    ::oService:consultaped(cPedido)
+
+	If ::oService:lErro
+		oRest:SetStatusCode(404)
+	Else
+		oRest:SetStatusCode(200)
+	EndIf
+
+	oRest:setResponse(::oService:execute())
+
+	If lAtivAmb 
+		RpcClearEnv()
+	Endif
+
+Return .T.
